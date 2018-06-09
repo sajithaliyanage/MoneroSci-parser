@@ -196,7 +196,6 @@ int main(int ac, const char* av[]) {
     thread13.join();
     thread14.join();
     thread15.join();
-
     thread8.join();
     thread9.join();
     thread11.join();

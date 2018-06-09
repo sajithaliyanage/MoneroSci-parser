@@ -59,6 +59,20 @@ namespace parse {
     std::mutex mtx3;           // mutex for critical section
     std::mutex mtx4;           // mutex for critical section
 
+    std::mutex mtxh1;          //mutex for id-hash vectors
+    std::mutex mtxh2;          //mutex for id-hash vectors
+    std::mutex mtxh3;          //mutex for id-hash vectors
+    std::mutex mtxh4;          //mutex for id-hash vectors
+    std::mutex mtxh5;          //mutex for id-hash vectors
+
+    std::mutex mtxb1;          //mutex for blockData vectors
+    std::mutex mtxb2;          //mutex for blockIndex vectors
+
+    std::mutex mtxt1;          //mutex for txData vectors
+    std::mutex mtxt2;          //mutex for txIndex vectors
+
+    std::mutex mtxk;          //mutex for KIdata vectors
+
     //global data store in memory as vectors for HASH-ID MAPPING
     std::vector<std::vector<string>> blockHashIdVector;         //store block hash-id
     std::vector<std::vector<string>> txHashIdVector;            //store tx hash-id
@@ -255,15 +269,21 @@ namespace parse {
 
         //store block map of hash-id in vector
         std::vector<string> blockVector = {blk_hash,to_string(lastBlockId)};
+        mtxh2.lock();
         blockHashIdVector.push_back(blockVector);
+        mtxh2.unlock();
 
         //store data on block detail vector
         blockData["lastBlockId"] = lastBlockId;
+        mtxb1.lock();
         outputOfBlock.push_back(blockData);
+        mtxb1.unlock();
 
         //insert data into the indexes table
         std::vector<int> blockId = {lastBlockId};
+        mtxb2.lock();
         outputIndexOfBlock.push_back(blockId);
+        mtxb2.unlock();
 
         /*
          ###################### BLOCK TRANSACTIONS ###########################
@@ -284,7 +304,9 @@ namespace parse {
 
             //store tx map of hash-id in vector
             std::vector<string> txVector = {txHash,to_string(lastTransactionId)};
+            mtxh3.lock();
             txHashIdVector.push_back(txVector);
+            mtxh3.unlock();
 
             /*
                  ###################### TRANSACTION STEALTH-ADDRESSES ###########################
@@ -294,33 +316,27 @@ namespace parse {
             */
             json outputs = transactionData.at("outputs");
 
-//            cout << "Tx-"<<(x+1)<<" Output Count - "<< outputs.size()<<endl;
             for(int y=0; y < outputs.size(); y++){
                 //output public-key
                 string sa_hash = outputs[y]["public_key"];
 
                 //store tx map of hash-id in vector
                 std::vector<string> saVector = {sa_hash,to_string(lastStealthAddressId)};
+                mtxh1.lock();
                 saHashIdVector.push_back(saVector);
-
-//                hashmapper::idHashMapperDB map3 ("blockchain-xmr", "hash-id-mapping", "stealth-addresses");
-//                map3.insertKey(sa_hash,to_string(lastStealthAddressId));
-//                map3.close();
+                mtxh1.unlock();
 
                 //store SA data in SA detail table
-//                dbConnection.insertSAData(outputs[y]);
                 outputs[y]["lastSAId"] = lastOutputId;
+                mtx.lock();
                 outputOfStealthAddresses.push_back(outputs[y]);
-
-                //create and store output indexes table
-                if(lastStealthAddressId == 1){
-//                    dbConnection.createTable(saIndexTable);
-                }
+                mtx.unlock();
 
                 //insert data into the indexes table
                 std::vector<int> tempIndexData = {lastTransactionId,lastStealthAddressId,lastOutputId,lastBlockId};
+                mtx2.lock();
                 outputIndexOfStealthAddresses.push_back(tempIndexData);
-//                dbConnection.insertSAIndex(lastTransactionId,lastStealthAddressId,lastOutputId,lastBlockId);
+                mtx2.unlock();
 
                 //increment stealth-address id
                 lastStealthAddressId += 1;
@@ -335,32 +351,22 @@ namespace parse {
            */
             json inputs = transactionData.at("inputs");
 
-//            cout << "Tx-"<<(x+1)<<" Input Count - "<< inputs.size()<<endl;
-//            cout << "Tx-"<<(x+1)<<" Inputs Mixin Count - "<< transactionData.at("mixin")<<endl;
-
             for(int y=0; y < inputs.size(); y++){
                 //output public-key
                 string key_image = inputs[y]["key_image"];
 
                 //store tx map of hash-id in vector
                 std::vector<string> keyImageVector = {key_image,to_string(lastKeyImageId)};
+                mtxh4.lock();
                 keyImageHashIdVector.push_back(keyImageVector);
+                mtxh4.unlock();
 
-//                hashmapper::idHashMapperDB map5 ("blockchain-xmr", "hash-id-mapping", "key-images");
-//                map5.insertKey(key_image,to_string(lastKeyImageId));
-//                map5.close();
-
-                //store key-image hash in table
-                if(lastKeyImageId == 1){
-//                    dbConnection.createTable(keyImageTable);
-                }
 
                 //store RM data in RM detail table
                 std::vector<string> tempDetailData = {to_string(lastKeyImageId),key_image,to_string(lastBlockId),to_string(lastTransactionId)};
+                mtxk.lock();
                 outputOfKeyImages.push_back(tempDetailData);
-
-//                indexMapper::indexes kIindexMap4 ("blockchain-xmr", "data-store", "key-images");
-//                kIindexMap4.insertKIData(key_image);
+                mtxk.unlock();
 
                 //consider transaction inputs - Ring Members
                 json mixins = inputs[y]["mixins"];
@@ -375,9 +381,14 @@ namespace parse {
 
                     if(res){
                         //value is in the bloom-filter
-                        if(rmHashIdVector.find(ring_key_image)->second){
+                        int nowId;
+                        mtxh5.lock();
+                        nowId= rmHashIdVector.find(ring_key_image)->second;
+                        mtxh5.unlock();
+
+                        if(nowId){
                             //value is in the memory
-                            currentRingMemberId = rmHashIdVector.find(ring_key_image)->second;
+                            currentRingMemberId = nowId;
                         }else{
                             //value is in the database
                             hashmapper::idHashMapperDB map ("blockchain-xmr", "hash-id-mapping", "ring-members");
@@ -393,33 +404,25 @@ namespace parse {
                     }else{
                         currentRingMemberId = lastRingMemberId;
                         bloomFilter.add(ring_key_image.c_str());              //add the ring-hash to the bloom filter
-                        rmHashIdVector[ring_key_image]=lastRingMemberId;       //add ringMemHash-id mapping to the memory
-                        lastRingMemberId += 1;
-                    }
 
-                    //create data table for ring-member details
-                    if(lastRingMemberId == 1){
-//                        dbConnection.createTable(rmDetailTable);
+                        mtxh5.lock();
+                        rmHashIdVector[ring_key_image]=lastRingMemberId;       //add ringMemHash-id mapping to the memory
+                        mtxh5.unlock();
+
+                        lastRingMemberId += 1;
                     }
 
                     //store RM data in RM detail table
                     mixins[z]["lastRingId"] = lastInputId;
+                    mtx3.lock();
                     outputOfRingMembers.push_back(mixins[z]);
-
-//                    indexMapper::indexes indexMap4 ("blockchain-xmr", "data-store", "ring-members");
-//                    indexMap4.insertRMData(mixins[z]);
-//                    int lastOutputId = indexMap4.lastInsertedId();
-
-                    //create and store output indexes table
-                    if(lastRingMemberId == 1){
-//                        dbConnection.createTable(rmIndexTable);
-                    }
+                    mtx3.unlock();
 
                     //insert data into the indexes table
                     std::vector<int> tempIndexRingData = {lastInputId,lastTransactionId,lastKeyImageId,currentRingMemberId,lastBlockId};
+                    mtx4.lock();
                     outputIndexOfRingMembers.push_back(tempIndexRingData);
-//                    indexMapper::indexes indexMapper3 ("blockchain-xmr", "indexes", "ring-members");
-//                    indexMapper3.insertRMIndex(lastOutputId,currentTransactionId,lastKeyImageId,currentLastRingMemberId,lastBlockId);
+                    mtx4.unlock();
 
                     lastInputId += 1;
                 }
@@ -428,15 +431,15 @@ namespace parse {
 
             //store data on block detail table
             transactionData["lastTxId"] = lastTransactionId;
+            mtxt1.lock();
             outputOfTx.push_back(transactionData);
-
+            mtxt1.unlock();
 
             //insert data into the indexes table
             std::vector<int> txId = {lastTransactionId,lastBlockId,lastTransactionId};
+            mtxt2.lock();
             outputIndexOfTx.push_back(txId);
-
-//            indexMapper::indexes indexMapper6 ("blockchain-xmr", "indexes", "tx");
-//            indexMapper6.insertTxIndex(lastOutputId,lastBlockId,lastTransactionId);
+            mtxt2.unlock();
 
             lastTransactionId += 1;
         }
@@ -460,94 +463,129 @@ namespace parse {
 
     //ID-HASH THREADS
     void runBlockIdHashMappingThread(){
-        hashmapper::idHashMapperDB map ("blockchain-xmr", "hash-id-mapping", "blocks");
-        int i = 0;
+        hashmapper::idHashMapperDB map1 ("blockchain-xmr", "hash-id-mapping", "blocks");
+
         while (true){
             if(!blockHashIdVector.empty()){
-                string blk_hash = blockHashIdVector[i][0];
-                string lastBlockId = blockHashIdVector[i][1];
-                blockHashIdVector.erase (blockHashIdVector.begin());
-                map.insertKey(blk_hash,lastBlockId);
+                std::vector<std::vector<string>> h2;
+
+                mtxh2.lock();
+                    h2.push_back(blockHashIdVector[0]);
+                    blockHashIdVector.erase (blockHashIdVector.begin());
+                mtxh2.unlock();
+
+                string blk_hash = h2[0][0];
+                string lastBlockId = h2[0][1];
+
+                map1.insertKey(blk_hash,lastBlockId);
+                h2.erase (h2.begin());
             }else if(blockHashIdVector.empty() && isAllBlockDone){
                 break;
             }
         }
 
-        map.close();
+        map1.close();
         cout << "BLOCK ID-HASH STORING THREAD COMPLETED!" << endl;
     }
 
     void runTxIdHashMappingThread(){
-        hashmapper::idHashMapperDB map ("blockchain-xmr", "hash-id-mapping", "tx");
-        int i = 0;
+        hashmapper::idHashMapperDB map2 ("blockchain-xmr", "hash-id-mapping", "tx");
+
         while (true){
             if(!txHashIdVector.empty()){
-                string tx_hash = txHashIdVector[i][0];
-                string lastTransactionId = txHashIdVector[i][1];
+                std::vector<std::vector<string>> h3;
+
+                mtxh3.lock();
+                h3.push_back(txHashIdVector[0]);
                 txHashIdVector.erase (txHashIdVector.begin());
-                map.insertKey(tx_hash,lastTransactionId);
+                mtxh3.unlock();
+
+                string tx_hash = h3[0][0];
+                string lastTransactionId = h3[0][1];
+
+                map2.insertKey(tx_hash,lastTransactionId);
+                h3.erase (h3.begin());
             }else if(txHashIdVector.empty() && isAllBlockDone){
                 break;
             }
         }
 
-        map.close();
+        map2.close();
         cout << "TX ID-HASH STORING THREAD COMPLETED!" << endl;
     }
 
     void runKeyImageIdHashMappingThread(){
-        hashmapper::idHashMapperDB map ("blockchain-xmr", "hash-id-mapping", "key-images");
-        int i = 0;
+        hashmapper::idHashMapperDB map3 ("blockchain-xmr", "hash-id-mapping", "key-images");
+
         while (true){
             if(!keyImageHashIdVector.empty()){
-                string ki_hash = keyImageHashIdVector[i][0];
-                string lastKIId = keyImageHashIdVector[i][1];
+                std::vector<std::vector<string>> h4;
+
+                mtxh4.lock();
+                h4.push_back(keyImageHashIdVector[0]);
                 keyImageHashIdVector.erase (keyImageHashIdVector.begin());
-                map.insertKey(ki_hash,lastKIId);
+                mtxh4.unlock();
+
+                string ki_hash = keyImageHashIdVector[0][0];
+                string lastKIId = keyImageHashIdVector[0][1];
+
+                map3.insertKey(ki_hash,lastKIId);
+                h4.erase (h4.begin());
             }else if(keyImageHashIdVector.empty() && isAllBlockDone){
                 break;
             }
         }
 
-        map.close();
+        map3.close();
         cout << "KEY-IMAGE ID-HASH STORING THREAD COMPLETED!" << endl;
     }
 
     void runSAIdHashMappingThread(){
-        hashmapper::idHashMapperDB map2 ("blockchain-xmr", "hash-id-mapping", "stealth-address");
-        int i = 0;
+        hashmapper::idHashMapperDB map4 ("blockchain-xmr", "hash-id-mapping", "stealth-address");
+
         while (true){
             if(!saHashIdVector.empty()){
-                string sa_hash = saHashIdVector[i][0];
-                string lastSAId = saHashIdVector[i][1];
+                std::vector<std::vector<string>> h1;
 
-                saHashIdVector.erase (saHashIdVector.begin());
-                map2.insertKey(sa_hash,lastSAId);
+                mtxh1.lock();
+                    h1.push_back(saHashIdVector[0]);
+                    saHashIdVector.erase (saHashIdVector.begin());
+                mtxh1.unlock();
+                string sa_hash = h1[0][0];
+                string lastSAId = h1[0][1];
+
+                h1.erase(h1.begin());
+                map4.insertKey(sa_hash,lastSAId);
             }else if(saHashIdVector.empty() && isAllBlockDone){
                 break;
             }
         }
 
-        map2.close();
+        map4.close();
         cout << "STEALTH-ADDRESS ID-HASH STORING THREAD COMPLETED!" << endl;
     }
 
     void runRMIdHashMappingThread(){
-        hashmapper::idHashMapperDB map ("blockchain-xmr", "hash-id-mapping", "ring-members");
+        hashmapper::idHashMapperDB map5 ("blockchain-xmr", "hash-id-mapping", "ring-members");
 
         while (true){
             if(!rmHashIdVector.empty()){
-                string rm_hash = rmHashIdVector.begin()->first;
-                int lastRMId = rmHashIdVector.begin()->second;
-                rmHashIdVector.erase(rmHashIdVector.begin());
+                string rm_hash;
+                int lastRMId;
 
-                map.insertKey(rm_hash,to_string(lastRMId));
+                mtxh5.lock();
+                rm_hash = rmHashIdVector.begin()->first;
+                lastRMId = rmHashIdVector.begin()->second;
+                rmHashIdVector.erase(rmHashIdVector.begin());
+                mtxh5.unlock();
+
+                map5.insertKey(rm_hash,to_string(lastRMId));
             }else if(rmHashIdVector.empty() && isAllBlockDone){
                 break;
             }
         }
 
-        map.close();
+        map5.close();
         cout << "RING-MEMBER ID-HASH STORING THREAD COMPLETED!" << endl;
     }
 
@@ -560,8 +598,15 @@ namespace parse {
 
         while (true){
             if(!outputOfBlock.empty()){
-                dbConnectionBlock.insertBlockData(outputOfBlock[0]);
+                std::vector<json> bData;
+
+                mtxb1.lock();
+                bData.push_back(outputOfBlock[0]);
                 outputOfBlock.erase(outputOfBlock.begin());
+                mtxb1.unlock();
+
+                dbConnectionBlock.insertBlockData(bData[0]);
+                bData.erase(bData.begin());
             }else if(outputOfBlock.empty() && isAllBlockDone){
                 break;
             }
@@ -578,8 +623,15 @@ namespace parse {
 
         while (true){
             if(!outputOfTx.empty()){
-                dbConnectionTx.insertTxData(outputOfTx[0]);
+                std::vector<json> tData;
+
+                mtxt1.lock();
+                tData.push_back(outputOfTx[0]);
                 outputOfTx.erase(outputOfTx.begin());
+                mtxt1.unlock();
+
+                dbConnectionTx.insertTxData(tData[0]);
+                tData.erase(tData.begin());
             }else if(outputOfTx.empty() && isAllBlockDone){
                 break;
             }
@@ -711,8 +763,15 @@ namespace parse {
 
         while (true){
             if(!outputOfKeyImages.empty()){
-                dbConnectionKI.insertKIData(outputOfKeyImages[0]);
+                std::vector<std::vector<string>> kData;
+
+                mtxk.lock();
+                kData.push_back(outputOfKeyImages[0]);
                 outputOfKeyImages.erase(outputOfKeyImages.begin());
+                mtxk.unlock();
+
+                dbConnectionKI.insertKIData(kData[0]);
+                kData.erase(kData.begin());
             }else if(outputOfKeyImages.empty() && isAllBlockDone){
                 break;
             }
@@ -850,8 +909,15 @@ namespace parse {
 
         while (true){
             if(!outputIndexOfBlock.empty()){
-                dbConnectionBlockIndex.insertBlockIndex(outputIndexOfBlock[0]);
+                std::vector<std::vector<int>> bIndex;
+
+                mtxb2.lock();
+                bIndex.push_back(outputIndexOfBlock[0]);
                 outputIndexOfBlock.erase(outputIndexOfBlock.begin());
+                mtxb2.unlock();
+
+                dbConnectionBlockIndex.insertBlockIndex(bIndex[0]);
+                bIndex.erase(bIndex.begin());
             }else if(outputIndexOfBlock.empty() && isAllBlockDone){
                 break;
             }
@@ -867,8 +933,15 @@ namespace parse {
 
         while (true){
             if(!outputIndexOfTx.empty()){
-                dbConnectionTxIndex.insertTxIndex(outputIndexOfTx[0]);
+                std::vector<std::vector<int>> tIndex;
+
+                mtxt2.lock();
+                tIndex.push_back(outputIndexOfTx[0]);
                 outputIndexOfTx.erase(outputIndexOfTx.begin());
+                mtxt2.unlock();
+
+                dbConnectionTxIndex.insertTxIndex(tIndex[0]);
+                tIndex.erase(tIndex.begin());
             }else if(outputIndexOfTx.empty() && isAllBlockDone){
                 break;
             }
@@ -1117,13 +1190,13 @@ namespace parse {
         //load last ids to global variables
         getLastIdList();
 
-        for(int x = 1; x < 22; x++){
+        for(int x = 1; x < 300; x++){
             xmrProcessor(monerosci, to_string(x));
             cout << "MoneroSci-parser has parsed blockchain data of "+ std::to_string(x)+ "/" << current_blockchain_height << endl;
 
             if((x%100) == 0){
                 cout << x << " - Data loaded to the main memory. Main process going to sleep 10 seconds"<<endl;
-                std::this_thread::sleep_for (std::chrono::seconds(10));
+                std::this_thread::sleep_for (std::chrono::seconds(1));
             }
         }
 
