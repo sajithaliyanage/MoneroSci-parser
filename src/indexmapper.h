@@ -24,6 +24,7 @@ namespace indexMapper{
         sqlite3_stmt *stmt;
         const char *pzTest;
         sqlite3_stmt *res;
+        std::mutex mtx;
 
     public:
         indexes(string homeDir, string subDir, string storeDir, bool firstTry = false){
@@ -91,7 +92,9 @@ namespace indexMapper{
         }
 
         void createFolderinPath(string path){
+            mtx.lock();
             system(("mkdir -p "+path).c_str());
+            mtx.unlock();
         }
 
         void createTable(char const *sqlQuery){

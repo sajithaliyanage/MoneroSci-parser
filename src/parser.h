@@ -53,6 +53,7 @@ namespace parse {
     int lastRingMemberId;
 
     BloomFilter bloomFilter; //instance of bloom-filter
+    hashmapper::idHashMapperDB ringMemberHashMap ("blockchain-xmr", "hash-id-mapping", "ring-members");
 //    indexMapper::indexes dbConnectionSA ("blockchain-xmr", "monero-data", "stealth-address");    //init database instance globally
     std::mutex mtx;           // mutex for critical section
     std::mutex mtx2;           // mutex for critical section
@@ -391,9 +392,7 @@ namespace parse {
                             currentRingMemberId = nowId;
                         }else{
                             //value is in the database
-                            hashmapper::idHashMapperDB map ("blockchain-xmr", "hash-id-mapping", "ring-members");
-                            string idIsExists = map.isKeyExist(ring_key_image);
-                            map.close();
+                            string idIsExists = ringMemberHashMap.isKeyExist(ring_key_image);
 
                             if(idIsExists == "null"){
                                 currentRingMemberId = lastRingMemberId;
@@ -464,7 +463,7 @@ namespace parse {
     //ID-HASH THREADS
     void runBlockIdHashMappingThread(){
         hashmapper::idHashMapperDB map1 ("blockchain-xmr", "hash-id-mapping", "blocks");
-
+        int i = 0;
         while (true){
             if(!blockHashIdVector.empty()){
                 std::vector<std::vector<string>> h2;
@@ -478,6 +477,7 @@ namespace parse {
                 string lastBlockId = h2[0][1];
 
                 map1.insertKey(blk_hash,lastBlockId);
+                i++;
                 h2.erase (h2.begin());
             }else if(blockHashIdVector.empty() && isAllBlockDone){
                 break;
@@ -485,12 +485,13 @@ namespace parse {
         }
 
         map1.close();
-        cout << "BLOCK ID-HASH STORING THREAD COMPLETED!" << endl;
+        cout << "BLOCK ID-HASH STORING THREAD COMPLETED. STORED " << i << " HASHES"<< endl;
     }
 
     void runTxIdHashMappingThread(){
         hashmapper::idHashMapperDB map2 ("blockchain-xmr", "hash-id-mapping", "tx");
 
+        int i = 0;
         while (true){
             if(!txHashIdVector.empty()){
                 std::vector<std::vector<string>> h3;
@@ -504,6 +505,7 @@ namespace parse {
                 string lastTransactionId = h3[0][1];
 
                 map2.insertKey(tx_hash,lastTransactionId);
+                i++;
                 h3.erase (h3.begin());
             }else if(txHashIdVector.empty() && isAllBlockDone){
                 break;
@@ -511,11 +513,12 @@ namespace parse {
         }
 
         map2.close();
-        cout << "TX ID-HASH STORING THREAD COMPLETED!" << endl;
+        cout << "TX ID-HASH STORING THREAD COMPLETED. STORED " << i << " HASHES" << endl;
     }
 
     void runKeyImageIdHashMappingThread(){
         hashmapper::idHashMapperDB map3 ("blockchain-xmr", "hash-id-mapping", "key-images");
+        int i = 0;
 
         while (true){
             if(!keyImageHashIdVector.empty()){
@@ -526,10 +529,11 @@ namespace parse {
                 keyImageHashIdVector.erase (keyImageHashIdVector.begin());
                 mtxh4.unlock();
 
-                string ki_hash = keyImageHashIdVector[0][0];
-                string lastKIId = keyImageHashIdVector[0][1];
+                string ki_hash = h4[0][0];
+                string lastKIId = h4[0][1];
 
                 map3.insertKey(ki_hash,lastKIId);
+                i++;
                 h4.erase (h4.begin());
             }else if(keyImageHashIdVector.empty() && isAllBlockDone){
                 break;
@@ -537,11 +541,12 @@ namespace parse {
         }
 
         map3.close();
-        cout << "KEY-IMAGE ID-HASH STORING THREAD COMPLETED!" << endl;
+        cout << "KEY-IMAGE ID-HASH STORING THREAD COMPLETED. STORED " <<i << " HASHES"<< endl;
     }
 
     void runSAIdHashMappingThread(){
         hashmapper::idHashMapperDB map4 ("blockchain-xmr", "hash-id-mapping", "stealth-address");
+        int i=0;
 
         while (true){
             if(!saHashIdVector.empty()){
@@ -554,45 +559,45 @@ namespace parse {
                 string sa_hash = h1[0][0];
                 string lastSAId = h1[0][1];
 
-                h1.erase(h1.begin());
                 map4.insertKey(sa_hash,lastSAId);
+                h1.erase(h1.begin());
+                i++;
             }else if(saHashIdVector.empty() && isAllBlockDone){
                 break;
             }
         }
 
         map4.close();
-        cout << "STEALTH-ADDRESS ID-HASH STORING THREAD COMPLETED!" << endl;
+        cout << "STEALTH-ADDRESS ID-HASH STORING THREAD COMPLETED. STORED " <<i << " HASHES" << endl;
     }
 
     void runRMIdHashMappingThread(){
-        hashmapper::idHashMapperDB map5 ("blockchain-xmr", "hash-id-mapping", "ring-members");
-
+        int i = 0;
         while (true){
             if(!rmHashIdVector.empty()){
                 string rm_hash;
                 int lastRMId;
-
                 mtxh5.lock();
-                rm_hash = rmHashIdVector.begin()->first;
-                lastRMId = rmHashIdVector.begin()->second;
-                rmHashIdVector.erase(rmHashIdVector.begin());
+                    rm_hash = rmHashIdVector.begin()->first;
+                    lastRMId = rmHashIdVector.begin()->second;
+                    rmHashIdVector.erase(rmHashIdVector.begin());
                 mtxh5.unlock();
 
-                map5.insertKey(rm_hash,to_string(lastRMId));
+                ringMemberHashMap.insertKey(rm_hash,to_string(lastRMId));
+                i++;
             }else if(rmHashIdVector.empty() && isAllBlockDone){
                 break;
             }
         }
 
-        map5.close();
-        cout << "RING-MEMBER ID-HASH STORING THREAD COMPLETED!" << endl;
+        //map5.close();
+        cout << "RING-MEMBER ID-HASH STORING THREAD COMPLETED. STORED " <<i<< " HASHES" << endl;
     }
 
     //DETAILS THREADS
     void runBlockDataStoreThread(){
         indexMapper::indexes dbConnectionBlock ("blockchain-xmr", "monero-data", "blocks" ,true);    //init database instance globally
-
+        int i = 0;
         //create and store block indexes table
         dbConnectionBlock.createTable(blockDetailsTable);
 
@@ -606,17 +611,19 @@ namespace parse {
                 mtxb1.unlock();
 
                 dbConnectionBlock.insertBlockData(bData[0]);
+                i++;
                 bData.erase(bData.begin());
             }else if(outputOfBlock.empty() && isAllBlockDone){
                 break;
             }
         }
         dbConnectionBlock.close();
-        cout << "BLOCK DATA STORING THREAD COMPLETED!" << endl;
+        cout << "BLOCK DATA STORING THREAD COMPLETED. STORED " << i<<" BLOCKS" << endl;
     }
 
     void runTxDataStoreThread(){
         indexMapper::indexes dbConnectionTx ("blockchain-xmr", "monero-data", "tx",true);    //init database instance globally
+        int i =0;
 
         //create data table for tx details
         dbConnectionTx.createTable(txDetailsTable);
@@ -631,6 +638,7 @@ namespace parse {
                 mtxt1.unlock();
 
                 dbConnectionTx.insertTxData(tData[0]);
+                i++;
                 tData.erase(tData.begin());
             }else if(outputOfTx.empty() && isAllBlockDone){
                 break;
@@ -638,73 +646,75 @@ namespace parse {
         }
         dbConnectionTx.close();
 
-        cout << "TX DATA STORING THREAD COMPLETED!" << endl;
+        cout << "TX DATA STORING THREAD COMPLETED. STORED " <<i<<" TXES"<< endl;
     }
 
     void runSaDataStoreThread1(){
-        time_t StartSD1, EndSD1;
-        time (& StartSD1);
-
         std::thread::id this_ids = std::this_thread::get_id();
         indexMapper::indexes dbConnectionSA ("blockchain-xmr", "monero-data","stealth-address-1" ,true );    //init database instance globally
+        int i = 0;
 
         //create data table for tx details
         dbConnectionSA.createTable(saDetailTable);
 
         while (true){
+            std::vector<json> temp;
+
+            mtx.lock();
             if(!outputOfStealthAddresses.empty()){
-                std::vector<json> temp;
-                mtx.lock();
-                    temp.push_back(outputOfStealthAddresses[0]);
-                    outputOfStealthAddresses.erase(outputOfStealthAddresses.begin());
-                mtx.unlock();
+                temp.push_back(outputOfStealthAddresses[0]);
+                outputOfStealthAddresses.erase(outputOfStealthAddresses.begin());
+            }
+            mtx.unlock();
+
+            if(!temp.empty()){
                 dbConnectionSA.insertSAData(temp[0]);
                 temp.erase(temp.begin());
-            }else if(outputOfStealthAddresses.empty() && isAllBlockDone){
+                i++;
+            }
+
+            if(outputOfStealthAddresses.empty() && isAllBlockDone){
                 break;
             }
+
         }
         dbConnectionSA.close();
-
-        time (& EndSD1);
-        double difSD1 = difftime (EndSD1, StartSD1);
-        cout << "\n Stealth-address-1 Process Done in " << difSD1 << " second(s)." << endl;
-
-        cout << this_ids <<" - SA DATA STORING THREAD COMPLETED!" << endl;
+        cout << this_ids <<" - SA DATA STORING THREAD COMPLETED. STORED " <<i << " STEALTH-ADDRESSES" << endl;
     }
     void runSaDataStoreThread2(){
-        time_t StartSD2, EndSD2;
-        time (& StartSD2);
-
+        int i=0;
         std::thread::id this_ids2 = std::this_thread::get_id();
+        //creating sqlite connection
         indexMapper::indexes dbConnectionSA1 ("blockchain-xmr", "monero-data","stealth-address-2" ,true );    //init database instance globally
 
         //create data table for tx details
         dbConnectionSA1.createTable(saDetailTable);
 
         while (true){
-            if(!outputOfStealthAddresses.empty()){
-                std::vector<json> temp2;
-                mtx.lock();
-                    temp2.push_back(outputOfStealthAddresses[0]);
-                    outputOfStealthAddresses.erase(outputOfStealthAddresses.begin());
-                mtx.unlock();
+            std::vector<json> temp2;
 
+            mtx.lock();
+            if(!outputOfStealthAddresses.empty()){
+                temp2.push_back(outputOfStealthAddresses[0]);
+                outputOfStealthAddresses.erase(outputOfStealthAddresses.begin());
+            }
+            mtx.unlock();
+
+            if(!temp2.empty()){
                 dbConnectionSA1.insertSAData(temp2[0]);
                 temp2.erase(temp2.begin());
-            }else if(outputOfStealthAddresses.empty() && isAllBlockDone){
+                i++;
+            }
+
+            if(outputOfStealthAddresses.empty() && isAllBlockDone){
                 break;
             }
         }
         dbConnectionSA1.close();
-
-        time (& EndSD2);
-        double difSD2 = difftime (EndSD2, StartSD2);
-        cout << "\n Stealth-address-2 Process Done in " << difSD2 << " second(s)." << endl;
-        cout << this_ids2 <<" - SA DATA STORING THREAD COMPLETED!" << endl;
+        cout << this_ids2 <<" - SA DATA STORING THREAD COMPLETED. STORED " <<i << " STEALTH-ADDRESSES" << endl;
     }
     void runSaDataStoreThread3(){
-
+        int i=0;
         std::thread::id this_ids3 = std::this_thread::get_id();
         indexMapper::indexes dbConnectionSA3 ("blockchain-xmr", "monero-data","stealth-address-3" ,true );    //init database instance globally
 
@@ -712,24 +722,32 @@ namespace parse {
         dbConnectionSA3.createTable(saDetailTable);
 
         while (true){
-            if(!outputOfStealthAddresses.empty()){
-                std::vector<json> temp3;
-                mtx.lock();
-                    temp3.push_back(outputOfStealthAddresses[0]);
-                    outputOfStealthAddresses.erase(outputOfStealthAddresses.begin());
-                mtx.unlock();
+            std::vector<json> temp3;
 
+            mtx.lock();
+            if(!outputOfStealthAddresses.empty()){
+                temp3.push_back(outputOfStealthAddresses[0]);
+                outputOfStealthAddresses.erase(outputOfStealthAddresses.begin());
+            }
+            mtx.unlock();
+
+            if(!temp3.empty()){
                 dbConnectionSA3.insertSAData(temp3[0]);
                 temp3.erase(temp3.begin());
-            }else if(outputOfStealthAddresses.empty() && isAllBlockDone){
+                i++;
+            }
+
+            if(outputOfStealthAddresses.empty() && isAllBlockDone){
                 break;
             }
+
+
         }
         dbConnectionSA3.close();
-
-        cout << this_ids3 <<" - SA DATA STORING THREAD COMPLETED!" << endl;
+        cout << this_ids3 <<" - SA DATA STORING THREAD COMPLETED. STORED " <<i << " STEALTH-ADDRESSES" << endl;
     }
     void runSaDataStoreThread4(){
+        int i=0;
         std::thread::id this_ids4 = std::this_thread::get_id();
         indexMapper::indexes dbConnectionSA4 ("blockchain-xmr", "monero-data","stealth-address-4" ,true );    //init database instance globally
 
@@ -737,27 +755,34 @@ namespace parse {
         dbConnectionSA4.createTable(saDetailTable);
 
         while (true){
-            if(!outputOfStealthAddresses.empty()){
-                std::vector<json> temp1;
-                mtx.lock();
-                    temp1.push_back(outputOfStealthAddresses[0]);
-                    outputOfStealthAddresses.erase(outputOfStealthAddresses.begin());
-                mtx.unlock();
+            std::vector<json> temp4;
 
-                dbConnectionSA4.insertSAData(temp1[0]);
-                temp1.erase(temp1.begin());
-            }else if(outputOfStealthAddresses.empty() && isAllBlockDone){
+            mtx.lock();
+            if(!outputOfStealthAddresses.empty()){
+                temp4.push_back(outputOfStealthAddresses[0]);
+                outputOfStealthAddresses.erase(outputOfStealthAddresses.begin());
+            }
+            mtx.unlock();
+
+            if(!temp4.empty()){
+                dbConnectionSA4.insertSAData(temp4[0]);
+                temp4.erase(temp4.begin());
+                i++;
+            }
+
+            if(outputOfStealthAddresses.empty() && isAllBlockDone){
                 break;
             }
+
         }
         dbConnectionSA4.close();
 
-        cout << this_ids4 <<" - SA DATA STORING THREAD COMPLETED!" << endl;
+        cout << this_ids4 <<" - SA DATA STORING THREAD COMPLETED. STORED " <<i << " STEALTH-ADDRESSES" << endl;
     }
 
     void runKeyImageDataStoreThread(){
         indexMapper::indexes dbConnectionKI ("blockchain-xmr", "monero-data", "key-image",true);    //init database instance globally
-
+        int i = 0;
         //create data table for tx details
         dbConnectionKI.createTable(keyImageTable);
 
@@ -771,6 +796,7 @@ namespace parse {
                 mtxk.unlock();
 
                 dbConnectionKI.insertKIData(kData[0]);
+                i++;
                 kData.erase(kData.begin());
             }else if(outputOfKeyImages.empty() && isAllBlockDone){
                 break;
@@ -778,103 +804,103 @@ namespace parse {
         }
         dbConnectionKI.close();
 
-        cout << "KEY-IMAGE DATA STORING THREAD COMPLETED!" << endl;
+        cout << "KEY-IMAGE DATA STORING THREAD COMPLETED. STORED " <<i << " KEY-IMAGES" << endl;
     }
 
     void runRingMemberStoreThread1(){
-        time_t StartI1, EndI1;
-        time (& StartI1);
-
         std::thread::id this_id_In = std::this_thread::get_id();
         indexMapper::indexes dbConnectionRM ("blockchain-xmr", "monero-data", "ring-members-1",true);    //init database instance globally
+        int i = 0;
 
         //create data table for tx details
         dbConnectionRM.createTable(rmDetailTable);
 
         while (true){
+            std::vector<json> tempInp;
+
+            mtx3.lock();
             if(!outputOfRingMembers.empty()){
-                std::vector<json> tempInp;
-                mtx3.lock();
-                    tempInp.push_back(outputOfRingMembers[0]);
-                    outputOfRingMembers.erase(outputOfRingMembers.begin());
-                mtx3.unlock();
+                tempInp.push_back(outputOfRingMembers[0]);
+                outputOfRingMembers.erase(outputOfRingMembers.begin());
+            }
+            mtx3.unlock();
+
+            if(!tempInp.empty()){
                 dbConnectionRM.insertRMData(tempInp[0]);
                 tempInp.erase(tempInp.begin());
-            }else if(outputOfRingMembers.empty() && isAllBlockDone){
+                i++;
+            }
+            if(outputOfRingMembers.empty() && isAllBlockDone){
                 break;
             }
         }
         dbConnectionRM.close();
-
-        time (& EndI1);
-        double difI1 = difftime (EndI1, StartI1);
-        cout << "\n RING-MEMBER-1 Process Done in " << difI1 << " second(s)." << endl;
-        cout << this_id_In <<" - RING-MEMBER DATA STORING THREAD COMPLETED!" << endl;
+        cout << this_id_In <<" - RING-MEMBER DATA STORING THREAD COMPLETED. STORED " <<i << " RING-MEMBERS" << endl;
     }
     void runRingMemberStoreThread2(){
-        time_t StartI2, EndI2;
-        time (& StartI2);
-
         std::thread::id this_id_In2 = std::this_thread::get_id();
         indexMapper::indexes dbConnectionRM2 ("blockchain-xmr", "monero-data", "ring-members-2",true);    //init database instance globally
+        int i = 0;
 
         //create data table for tx details
         dbConnectionRM2.createTable(rmDetailTable);
 
         while (true){
+            std::vector<json> tempInp2;
+
+            mtx3.lock();
             if(!outputOfRingMembers.empty()){
-                std::vector<json> tempInp2;
-                mtx3.lock();
-                    tempInp2.push_back(outputOfRingMembers[0]);
-                    outputOfRingMembers.erase(outputOfRingMembers.begin());
-                mtx3.unlock();
+                tempInp2.push_back(outputOfRingMembers[0]);
+                outputOfRingMembers.erase(outputOfRingMembers.begin());
+            }
+            mtx3.unlock();
+
+            if(!tempInp2.empty()){
                 dbConnectionRM2.insertRMData(tempInp2[0]);
                 tempInp2.erase(tempInp2.begin());
-            }else if(outputOfRingMembers.empty() && isAllBlockDone){
+                i++;
+            }
+
+            if(outputOfRingMembers.empty() && isAllBlockDone){
                 break;
             }
         }
         dbConnectionRM2.close();
-
-        time (& EndI2);
-        double difI2 = difftime (EndI2, StartI2);
-        cout << "\n RING-MEMBER-2 Process Done in " << difI2 << " second(s)." << endl;
-        cout << this_id_In2 <<" - RING-MEMBER DATA STORING THREAD COMPLETED!" << endl;
+        cout << this_id_In2 <<" - RING-MEMBER DATA STORING THREAD COMPLETED. STORED " <<i << " RING-MEMBERS" << endl;
     }
     void runRingMemberStoreThread3(){
-        time_t StartI3, EndI3;
-        time (& StartI3);
-
         std::thread::id this_id_In3 = std::this_thread::get_id();
         indexMapper::indexes dbConnectionRM3 ("blockchain-xmr", "monero-data", "ring-members-3",true);    //init database instance globally
+        int i = 0;
 
         //create data table for tx details
         dbConnectionRM3.createTable(rmDetailTable);
 
         while (true){
+            std::vector<json> tempInp3;
+
+            mtx3.lock();
             if(!outputOfRingMembers.empty()){
-                std::vector<json> tempInp3;
-                mtx3.lock();
-                    tempInp3.push_back(outputOfRingMembers[0]);
-                    outputOfRingMembers.erase(outputOfRingMembers.begin());
-                mtx3.unlock();
+                tempInp3.push_back(outputOfRingMembers[0]);
+                outputOfRingMembers.erase(outputOfRingMembers.begin());
+            }
+            mtx3.unlock();
+
+            if(!tempInp3.empty()){
                 dbConnectionRM3.insertRMData(tempInp3[0]);
                 tempInp3.erase(tempInp3.begin());
-            }else if(outputOfRingMembers.empty() && isAllBlockDone){
+                i++;
+            }
+
+            if(outputOfRingMembers.empty() && isAllBlockDone){
                 break;
             }
         }
         dbConnectionRM3.close();
-
-        time (& EndI3);
-        double difI3 = difftime (EndI3, StartI3);
-        cout << "\n RING-MEMBER-3 Process Done in " << difI3 << " second(s)." << endl;
-        cout << this_id_In3 <<" - RING-MEMBER DATA STORING THREAD COMPLETED!" << endl;
+        cout << this_id_In3 <<" - RING-MEMBER DATA STORING THREAD COMPLETED. STORED " <<i << " RING-MEMBERS" << endl;
     }
     void runRingMemberStoreThread4(){
-        time_t StartI4, EndI4;
-        time (& StartI4);
-
+        int i = 0;
         std::thread::id this_id_In4 = std::this_thread::get_id();
         indexMapper::indexes dbConnectionRM4 ("blockchain-xmr", "monero-data", "ring-members-4",true);    //init database instance globally
 
@@ -882,28 +908,32 @@ namespace parse {
         dbConnectionRM4.createTable(rmDetailTable);
 
         while (true){
+            std::vector<json> tempInp4;
+
+            mtx3.lock();
             if(!outputOfRingMembers.empty()){
-                std::vector<json> tempInp4;
-                mtx3.lock();
-                    tempInp4.push_back(outputOfRingMembers[0]);
-                    outputOfRingMembers.erase(outputOfRingMembers.begin());
-                mtx3.unlock();
+                tempInp4.push_back(outputOfRingMembers[0]);
+                outputOfRingMembers.erase(outputOfRingMembers.begin());
+            }
+            mtx3.unlock();
+
+            if(!tempInp4.empty()){
                 dbConnectionRM4.insertRMData(tempInp4[0]);
                 tempInp4.erase(tempInp4.begin());
-            }else if(outputOfRingMembers.empty() && isAllBlockDone){
+                i++;
+            }
+
+            if(outputOfRingMembers.empty() && isAllBlockDone){
                 break;
             }
         }
         dbConnectionRM4.close();
-
-        time (& EndI4);
-        double difI4 = difftime (EndI4, StartI4);
-        cout << "\n RING-MEMBER-4 Process Done in " << difI4 << " second(s)." << endl;
-        cout << this_id_In4 <<" - RING-MEMBER DATA STORING THREAD COMPLETED!" << endl;
+        cout << this_id_In4 <<" - RING-MEMBER DATA STORING THREAD COMPLETED. STORED " <<i << " RING-MEMBERS" << endl;
     }
 
     //INDEX THREADS
     void runBlockIndexStoreThread(){
+        int i = 0;
         indexMapper::indexes dbConnectionBlockIndex ("blockchain-xmr", "monero-indexes", "blocks",true);    //init database instance globally
         dbConnectionBlockIndex.createTable(blockIndexTable);
 
@@ -917,6 +947,7 @@ namespace parse {
                 mtxb2.unlock();
 
                 dbConnectionBlockIndex.insertBlockIndex(bIndex[0]);
+                i++;
                 bIndex.erase(bIndex.begin());
             }else if(outputIndexOfBlock.empty() && isAllBlockDone){
                 break;
@@ -924,12 +955,13 @@ namespace parse {
         }
         dbConnectionBlockIndex.close();
 
-        cout << "BLOCK INDEX STORING THREAD COMPLETED!" << endl;
+        cout << "BLOCK INDEX STORING THREAD COMPLETED. STORED " <<i << " BLOCK INDEXES" << endl;
     }
 
     void runTxIndexStoreThread(){
         indexMapper::indexes dbConnectionTxIndex ("blockchain-xmr", "monero-indexes", "tx",true);    //init database instance globally
         dbConnectionTxIndex.createTable(txIndexTable);
+        int i = 0;
 
         while (true){
             if(!outputIndexOfTx.empty()){
@@ -941,6 +973,7 @@ namespace parse {
                 mtxt2.unlock();
 
                 dbConnectionTxIndex.insertTxIndex(tIndex[0]);
+                i++;
                 tIndex.erase(tIndex.begin());
             }else if(outputIndexOfTx.empty() && isAllBlockDone){
                 break;
@@ -948,241 +981,244 @@ namespace parse {
         }
         dbConnectionTxIndex.close();
 
-        cout << "TX INDEX STORING THREAD COMPLETED!" << endl;
+        cout << "TX INDEX STORING THREAD COMPLETED. STORED " <<i << " TX INDEXES" << endl;
     }
 
     void runSAIndexStoreThread1(){
-        time_t StartS1, EndS1;
-        time (& StartS1);
-
+        int i = 0;
         std::thread::id this_id1 = std::this_thread::get_id();
         indexMapper::indexes dbConnectionSAIndex ("blockchain-xmr", "monero-indexes", "stealth-address-1",true);    //init database instance globally
         dbConnectionSAIndex.createTable(saIndexTable);
 
         while (true){
+            std::vector<json> tempAr;
+
+            mtx2.lock();
             if(!outputIndexOfStealthAddresses.empty()){
-                std::vector<json> tempAr;
-                mtx2.lock();
                 tempAr.push_back(outputIndexOfStealthAddresses[0]);
-                    outputIndexOfStealthAddresses.erase(outputIndexOfStealthAddresses.begin());
-                mtx2.unlock();
+                outputIndexOfStealthAddresses.erase(outputIndexOfStealthAddresses.begin());
+
+            }
+            mtx2.unlock();
+
+            if(!tempAr.empty()){
                 dbConnectionSAIndex.insertSAIndex(tempAr[0]);
                 tempAr.erase(tempAr.begin());
-            }else if(outputIndexOfStealthAddresses.empty() && isAllBlockDone){
+                i++;
+            }
+
+            if(outputIndexOfStealthAddresses.empty() && isAllBlockDone){
                 break;
             }
         }
         dbConnectionSAIndex.close();
-
-        time (& EndS1);
-        double difS1 = difftime (EndS1, StartS1);
-        cout << "\n Stealth-address-Index-1 Process Done in " << difS1 << " second(s)." << endl;
-        cout << this_id1 <<"SA INDEX STORING THREAD COMPLETED!" << endl;
+        cout << this_id1 <<"SA INDEX STORING THREAD COMPLETED. STORED " <<i << " SA INDEXES" << endl;
     }
     void runSAIndexStoreThread2(){
-        time_t StartS2, EndS2;
-        time (& StartS2);
-
+        int i = 0;
         std::thread::id this_id2 = std::this_thread::get_id();
         indexMapper::indexes dbConnectionSAIndex2 ("blockchain-xmr", "monero-indexes", "stealth-address-2",true);    //init database instance globally
         dbConnectionSAIndex2.createTable(saIndexTable);
 
         while (true){
+            std::vector<json> tempAr2;
+
+            mtx2.lock();
             if(!outputIndexOfStealthAddresses.empty()){
-                std::vector<json> tempAr2;
-                mtx2.lock();
                 tempAr2.push_back(outputIndexOfStealthAddresses[0]);
-                    outputIndexOfStealthAddresses.erase(outputIndexOfStealthAddresses.begin());
-                mtx2.unlock();
+                outputIndexOfStealthAddresses.erase(outputIndexOfStealthAddresses.begin());
+            }
+            mtx2.unlock();
+
+            if(!tempAr2.empty()){
                 dbConnectionSAIndex2.insertSAIndex(tempAr2[0]);
                 tempAr2.erase(tempAr2.begin());
-            }else if(outputIndexOfStealthAddresses.empty() && isAllBlockDone){
+                i++;
+            }
+
+            if(outputIndexOfStealthAddresses.empty() && isAllBlockDone){
                 break;
             }
         }
         dbConnectionSAIndex2.close();
-
-        time (& EndS2);
-        double difS2 = difftime (EndS2, StartS2);
-        cout << "\n Stealth-address-Index-2 Process Done in " << difS2 << " second(s)." << endl;
-        cout << this_id2 <<"SA INDEX STORING THREAD COMPLETED!" << endl;
+        cout << this_id2 <<"SA INDEX STORING THREAD COMPLETED. STORED " <<i << " SA INDEXES" << endl;
     }
     void runSAIndexStoreThread3(){
-        time_t StartS3, EndS3;
-        time (& StartS3);
-
+        int i = 0;
         std::thread::id this_id3 = std::this_thread::get_id();
         indexMapper::indexes dbConnectionSAIndex3 ("blockchain-xmr", "monero-indexes", "stealth-address-3",true);    //init database instance globally
         dbConnectionSAIndex3.createTable(saIndexTable);
 
         while (true){
+            std::vector<json> tempAr3;
+
+            mtx2.lock();
             if(!outputIndexOfStealthAddresses.empty()){
-                std::vector<json> tempAr3;
-                mtx2.lock();
-                    tempAr3.push_back(outputIndexOfStealthAddresses[0]);
-                    outputIndexOfStealthAddresses.erase(outputIndexOfStealthAddresses.begin());
-                mtx2.unlock();
+                tempAr3.push_back(outputIndexOfStealthAddresses[0]);
+                outputIndexOfStealthAddresses.erase(outputIndexOfStealthAddresses.begin());
+            }
+            mtx2.unlock();
+
+            if(!tempAr3.empty()){
                 dbConnectionSAIndex3.insertSAIndex(tempAr3[0]);
                 tempAr3.erase(tempAr3.begin());
-            }else if(outputIndexOfStealthAddresses.empty() && isAllBlockDone){
+                i++;
+            }
+
+            if(outputIndexOfStealthAddresses.empty() && isAllBlockDone){
                 break;
             }
         }
         dbConnectionSAIndex3.close();
-
-        time (& EndS3);
-        double difS3 = difftime (EndS3, StartS3);
-        cout << "\n Stealth-address-Index-3 Process Done in " << difS3 << " second(s)." << endl;
-        cout << this_id3 <<"SA INDEX STORING THREAD COMPLETED!" << endl;
+        cout << this_id3 <<"SA INDEX STORING THREAD COMPLETED. STORED " <<i << " SA INDEXES" << endl;
     }
     void runSAIndexStoreThread4(){
-        time_t StartS4, EndS4;
-        time (& StartS4);
-
+        int i = 0;
         std::thread::id this_id4 = std::this_thread::get_id();
         indexMapper::indexes dbConnectionSAIndex4 ("blockchain-xmr", "monero-indexes", "stealth-address-4",true);    //init database instance globally
         dbConnectionSAIndex4.createTable(saIndexTable);
 
         while (true){
+            std::vector<json> tempAr4;
+
+            mtx2.lock();
             if(!outputIndexOfStealthAddresses.empty()){
-                std::vector<json> tempAr4;
-                mtx2.lock();
-                    tempAr4.push_back(outputIndexOfStealthAddresses[0]);
-                    outputIndexOfStealthAddresses.erase(outputIndexOfStealthAddresses.begin());
-                mtx2.unlock();
+                tempAr4.push_back(outputIndexOfStealthAddresses[0]);
+                outputIndexOfStealthAddresses.erase(outputIndexOfStealthAddresses.begin());
+            }
+            mtx2.unlock();
+
+            if(!tempAr4.empty()){
                 dbConnectionSAIndex4.insertSAIndex(tempAr4[0]);
                 tempAr4.erase(tempAr4.begin());
-            }else if(outputIndexOfStealthAddresses.empty() && isAllBlockDone){
+                i++;
+            }
+
+            if(outputIndexOfStealthAddresses.empty() && isAllBlockDone){
                 break;
             }
         }
         dbConnectionSAIndex4.close();
-
-        time (& EndS4);
-        double difS4 = difftime (EndS4, StartS4);
-        cout << "\n Stealth-address-Index-4 Process Done in " << difS4 << " second(s)." << endl;
-        cout << this_id4 <<"SA INDEX STORING THREAD COMPLETED!" << endl;
+        cout << this_id4 <<"SA INDEX STORING THREAD COMPLETED. STORED " <<i << " SA INDEXES" << endl;
     }
 
     void runRMIndexStoreThread1(){
-        time_t StartRI1, EndRI1;
-        time (& StartRI1);
-
+        int i = 0;
         std::thread::id this_idRI1 = std::this_thread::get_id();
 
         indexMapper::indexes dbConnectionRMIndex ("blockchain-xmr", "monero-indexes", "ring-members-1",true);    //init database instance globally
         dbConnectionRMIndex.createTable(rmIndexTable);
 
         while (true){
+            std::vector<json> tempArRI;
+
+            mtx4.lock();
             if(!outputIndexOfRingMembers.empty()){
-                std::vector<json> tempArRI;
-                mtx4.lock();
-                    tempArRI.push_back(outputIndexOfRingMembers[0]);
-                    outputIndexOfRingMembers.erase(outputIndexOfRingMembers.begin());
-                mtx4.unlock();
+                tempArRI.push_back(outputIndexOfRingMembers[0]);
+                outputIndexOfRingMembers.erase(outputIndexOfRingMembers.begin());
+            }
+            mtx4.unlock();
+
+            if(!tempArRI.empty()){
                 dbConnectionRMIndex.insertRMIndex(tempArRI[0]);
                 tempArRI.erase(tempArRI.begin());
+                i++;
+            }
 
-            }else if(outputIndexOfRingMembers.empty() && isAllBlockDone){
+            if(outputIndexOfRingMembers.empty() && isAllBlockDone){
                 break;
             }
         }
         dbConnectionRMIndex.close();
-
-        time (& EndRI1);
-        double difRI1 = difftime (EndRI1, StartRI1);
-        cout << "\n Ring Member-Index-1 Process Done in " << difRI1 << " second(s)." << endl;
-        cout << this_idRI1 <<" RM INDEX STORING THREAD COMPLETED!" << endl;
+        cout << this_idRI1 <<" RM INDEX STORING THREAD COMPLETED. STORED " <<i << " RM INDEXES" << endl;
     }
     void runRMIndexStoreThread2(){
-        time_t StartRI2, EndRI2;
-        time (& StartRI2);
-
         std::thread::id this_idRI2 = std::this_thread::get_id();
-
+        int i = 0;
         indexMapper::indexes dbConnectionRMIndex2 ("blockchain-xmr", "monero-indexes", "ring-members-2",true);    //init database instance globally
         dbConnectionRMIndex2.createTable(rmIndexTable);
 
         while (true){
+            std::vector<json> tempArRI2;
+
+            mtx4.lock();
             if(!outputIndexOfRingMembers.empty()){
-                std::vector<json> tempArRI2;
-                mtx4.lock();
-                    tempArRI2.push_back(outputIndexOfRingMembers[0]);
-                    outputIndexOfRingMembers.erase(outputIndexOfRingMembers.begin());
-                mtx4.unlock();
+                tempArRI2.push_back(outputIndexOfRingMembers[0]);
+                outputIndexOfRingMembers.erase(outputIndexOfRingMembers.begin());
+            }
+            mtx4.unlock();
+
+            if(!tempArRI2.empty()){
                 dbConnectionRMIndex2.insertRMIndex(tempArRI2[0]);
                 tempArRI2.erase(tempArRI2.begin());
+                i++;
+            }
 
-            }else if(outputIndexOfRingMembers.empty() && isAllBlockDone){
+            if(outputIndexOfRingMembers.empty() && isAllBlockDone){
                 break;
             }
         }
         dbConnectionRMIndex2.close();
-
-        time (& EndRI2);
-        double difRI2 = difftime (EndRI2, StartRI2);
-        cout << "\n Ring Member-Index-2 Process Done in " << difRI2 << " second(s)." << endl;
-        cout << this_idRI2 <<" RM INDEX STORING THREAD COMPLETED!" << endl;
+        cout << this_idRI2 <<" RM INDEX STORING THREAD COMPLETED. STORED " <<i << " RM INDEXES" << endl;
     }
     void runRMIndexStoreThread3(){
-        time_t StartRI3, EndRI3;
-        time (& StartRI3);
-
         std::thread::id this_idRI3 = std::this_thread::get_id();
-
+        int i = 0;
         indexMapper::indexes dbConnectionRMIndex3 ("blockchain-xmr", "monero-indexes", "ring-members-3",true);    //init database instance globally
         dbConnectionRMIndex3.createTable(rmIndexTable);
 
         while (true){
+            std::vector<json> tempArRI3;
+
+            mtx4.lock();
             if(!outputIndexOfRingMembers.empty()){
-                std::vector<json> tempArRI3;
-                mtx4.lock();
-                    tempArRI3.push_back(outputIndexOfRingMembers[0]);
-                    outputIndexOfRingMembers.erase(outputIndexOfRingMembers.begin());
-                mtx4.unlock();
+                tempArRI3.push_back(outputIndexOfRingMembers[0]);
+                outputIndexOfRingMembers.erase(outputIndexOfRingMembers.begin());
+            }
+            mtx4.unlock();
+
+            if(!tempArRI3.empty()){
                 dbConnectionRMIndex3.insertRMIndex(tempArRI3[0]);
                 tempArRI3.erase(tempArRI3.begin());
+                i++;
+            }
 
-            }else if(outputIndexOfRingMembers.empty() && isAllBlockDone){
+            if(outputIndexOfRingMembers.empty() && isAllBlockDone){
                 break;
             }
         }
         dbConnectionRMIndex3.close();
-
-        time (& EndRI3);
-        double difRI3 = difftime (EndRI3, StartRI3);
-        cout << "\n Ring Member-Index-3 Process Done in " << difRI3 << " second(s)." << endl;
-        cout << this_idRI3 <<" RM INDEX STORING THREAD COMPLETED!" << endl;
+        cout << this_idRI3 <<" RM INDEX STORING THREAD COMPLETED. STORED " <<i << " RM INDEXES" << endl;
     }
     void runRMIndexStoreThread4(){
-        time_t StartRI4, EndRI4;
-        time (& StartRI4);
-
         std::thread::id this_idRI4 = std::this_thread::get_id();
-
+        int i = 0;
         indexMapper::indexes dbConnectionRMIndex4 ("blockchain-xmr", "monero-indexes", "ring-members-4",true);    //init database instance globally
         dbConnectionRMIndex4.createTable(rmIndexTable);
 
         while (true){
+            std::vector<json> tempArRI4;
+
+            mtx4.lock();
             if(!outputIndexOfRingMembers.empty()){
-                std::vector<json> tempArRI4;
-                mtx4.lock();
-                    tempArRI4.push_back(outputIndexOfRingMembers[0]);
-                    outputIndexOfRingMembers.erase(outputIndexOfRingMembers.begin());
-                mtx4.unlock();
+                tempArRI4.push_back(outputIndexOfRingMembers[0]);
+                outputIndexOfRingMembers.erase(outputIndexOfRingMembers.begin());
+            }
+            mtx4.unlock();
+
+            if(!tempArRI4.empty()){
                 dbConnectionRMIndex4.insertRMIndex(tempArRI4[0]);
                 tempArRI4.erase(tempArRI4.begin());
+                i++;
+            }
 
-            }else if(outputIndexOfRingMembers.empty() && isAllBlockDone){
+            if(outputIndexOfRingMembers.empty() && isAllBlockDone){
                 break;
             }
         }
         dbConnectionRMIndex4.close();
 
-        time (& EndRI4);
-        double difRI4 = difftime (EndRI4, StartRI4);
-        cout << "\n Ring Member-Index-4 Process Done in " << difRI4 << " second(s)." << endl;
-        cout << this_idRI4 <<" RM INDEX STORING THREAD COMPLETED!" << endl;
+        cout << this_idRI4 <<" RM INDEX STORING THREAD COMPLETED. STORED " <<i << " RM INDEXES" << endl;
     }
 
     //MAIN FUNCTION
@@ -1190,20 +1226,32 @@ namespace parse {
         //load last ids to global variables
         getLastIdList();
 
-        for(int x = 1; x < 300; x++){
+        for(int x = 1; x < 10000; x++){
             xmrProcessor(monerosci, to_string(x));
             cout << "MoneroSci-parser has parsed blockchain data of "+ std::to_string(x)+ "/" << current_blockchain_height << endl;
 
-            if((x%100) == 0){
+            if((x%1000) == 0){
                 cout << x << " - Data loaded to the main memory. Main process going to sleep 10 seconds"<<endl;
-                std::this_thread::sleep_for (std::chrono::seconds(1));
+//                std::this_thread::sleep_for (std::chrono::seconds(15));
+                sleep(10);
             }
         }
 
         //store the last id in rocksdb hash-id mapping
         storeLastIdList();
+        ringMemberHashMap.close();
+
+        cout << "----------------------------------------------------------" << endl;
+        cout << "BLOCKCHAIN DATA HAS LOADED TO THE MEMORY" << endl;
+        cout << "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ " << endl;
+        cout << "TOTAL BLOCKS            -" << lastBlockId << endl;
+        cout << "TOTAL TRANSACTIONS      -" << lastTransactionId << endl;
+        cout << "TOTAL KEY-IMAGES        -" << lastKeyImageId << endl;
+        cout << "TOTAL STEALTH ADDRESSES -" << lastStealthAddressId << endl;
+        cout << "TOTAL RING MEMBERS      -" << lastRingMemberId << endl;
+        cout << "----------------------------------------------------------" << endl;
+
         isAllBlockDone = true;
-//        dbConnection.close();
 
     }
 }

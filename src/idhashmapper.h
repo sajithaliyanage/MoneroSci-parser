@@ -24,6 +24,7 @@ namespace hashmapper {
         rocksdb::DB* db;
         rocksdb::Options options;
         rocksdb::Status status;
+        std::mutex mtx;
 
     public:
 
@@ -51,7 +52,9 @@ namespace hashmapper {
         }
 
         void createFolderinPath(string path){
+            mtx.lock();
             system(("mkdir -p "+path).c_str());
+            mtx.unlock();
         }
 
         void insertKey(string key, string value){
