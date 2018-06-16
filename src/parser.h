@@ -54,7 +54,7 @@ namespace parse {
 
     BloomFilter bloomFilter; //instance of bloom-filter
     hashmapper::idHashMapperDB ringMemberHashMap ("blockchain-xmr", "hash-id-mapping", "ring-members");
-//    indexMapper::indexes dbConnectionSA ("blockchain-xmr", "monero-data", "stealth-address");    //init database instance globally
+
     std::mutex mtx;           // mutex for critical section
     std::mutex mtx2;           // mutex for critical section
     std::mutex mtx3;           // mutex for critical section
@@ -189,12 +189,14 @@ namespace parse {
 
     json blockDetails(page& monerosci, string blk_height) {
         json jsonResponse  = monerosci.json_block(blk_height);
+
         return jsonResponse;
 
     }
 
     json transactionDetails(page& monerosci, string curTx){
         json jsonResponse  = monerosci.json_transaction(curTx);
+
         return jsonResponse;
     }
 
@@ -1501,7 +1503,7 @@ namespace parse {
         //load last ids to global variables
         getLastIdList();
 
-        for(int x = 1; x < 10000; x++){
+        for(int x = 1; x < 120; x++){
             xmrProcessor(monerosci, to_string(x));
             cout << "MoneroSci-parser has parsed blockchain data of "+ std::to_string(x)+ "/" << current_blockchain_height << endl;
 

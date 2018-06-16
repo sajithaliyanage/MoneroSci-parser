@@ -216,7 +216,7 @@ int main(int ac, const char* av[]) {
     //end date and time
     time (& End);
     double dif = difftime (End, Start);
-    cout << "\nMoneroSci Process Done in " << dif << " second(s)." << endl;
+    cout << "\nMoneroSci PROCESS DONE IN " << dif << " SECOND(s)." << endl;
 
     now = std::chrono::system_clock::now();
     now_c = std::chrono::system_clock::to_time_t(now);

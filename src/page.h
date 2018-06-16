@@ -1171,8 +1171,7 @@ public:
         uint64_t sum_fees = 0;
 
         // get tx details for the coinbase tx, i.e., miners reward
-        tx_details txd_coinbase = get_tx_details(blk.miner_tx, true,
-                                                 _blk_height, current_blockchain_height);
+        tx_details txd_coinbase = get_tx_details(blk.miner_tx, true, _blk_height, current_blockchain_height);
 
         // initalise page tempate map with basic info about blockchain
         mstch::map context {
@@ -1187,8 +1186,7 @@ public:
                 {"have_next_hash"       , have_next_hash},
                 {"have_prev_hash"       , have_prev_hash},
                 {"have_txs"             , have_txs},
-                {"no_txs"               , std::to_string(
-                        blk.tx_hashes.size())},
+                {"no_txs"               , std::to_string(blk.tx_hashes.size())},
                 {"blk_age"              , age.first},
                 {"delta_time"           , delta_time},
                 {"blk_nonce"            , blk.nonce},
@@ -1384,10 +1382,7 @@ public:
                     // ok, it is still in blockchain
                     // update its age and number of confirmations
 
-                    pair<string, string> age
-                            = get_age(std::time(nullptr),
-                                      blk_timestamp_uint,
-                                      FULL_AGE_FORMAT);
+                    pair<string, string> age = get_age(std::time(nullptr), blk_timestamp_uint, FULL_AGE_FORMAT);
 
                     tx_context["delta_time"] = age.first;
 
@@ -1482,15 +1477,13 @@ public:
             if (enable_tx_cache)
             {
                 tx_context_cache.Put(
-                        {tx_hash, static_cast<bool>(with_ring_signatures)},
-                        tx_info_cache {
+                        {tx_hash, static_cast<bool>(with_ring_signatures)}, tx_info_cache {
                                 boost::get<uint64_t>(tx_context["tx_blk_height"]),
                                 boost::get<uint64_t>(tx_context["blk_timestamp_uint"]),
                                 tx_context});
             }
 
-            tx_context["construction_time"] = fmt::format(
-                    "{:0.4f}", static_cast<double>(duration.count())/1.0e6);
+            tx_context["construction_time"] = fmt::format("{:0.4f}", static_cast<double>(duration.count())/1.0e6);
 
         } // else if (tx_context_cache.Contains(tx_hash))
 
@@ -4041,14 +4034,52 @@ public:
         uint64_t bc_height = core_storage->get_current_blockchain_height();
 
         tx_details txd = get_tx_details(tx, is_coinbase_tx, block_height, bc_height);
+        const crypto::hash& tx_hash_data = txd.hash;
+
+        json raw_tx_data = json_rawtransaction(tx_hash_str);
 
         json outputs;
 
+        // get indices of outputs in amounts tables
+        vector<uint64_t> out_amount_indices;
+        try
+        {
+
+            uint64_t tx_index;
+
+            if (core_storage->get_db().tx_exists(txd.hash, tx_index))
+            {
+                out_amount_indices = core_storage->get_db().get_tx_amount_output_indices(tx_index);
+            }
+            else
+            {
+                cerr << "get_tx_outputs_gindexs failed to find transaction with id = " << txd.hash;
+            }
+
+        }
+        catch(const exception& e)
+        {
+            cerr << e.what() << endl;
+        }
+
+        uint64_t output_idx {0};
+
         for (const auto& output: txd.output_pub_keys)
         {
+            uint64_t num_outputs_amount = core_storage->get_db().get_num_outputs(output.second);
+
+            string out_amount_index_str {"N/A"};
+
+            if (!out_amount_indices.empty()) {
+                out_amount_index_str = std::to_string(out_amount_indices.at(output_idx));
+            }
+
             outputs.push_back(json {
                     {"public_key", pod_to_hex(output.first.key)},
-                    {"amount"    , output.second}
+                    {"amount"    , output.second},
+                    {"amount_idx", out_amount_index_str},
+                    {"unformated_output_idx" , output_idx},
+                    {"output_idx"            , fmt::format("{:02d}", output_idx++)}
             });
         }
 
@@ -4056,7 +4087,7 @@ public:
 
         for (const txin_to_key &in_key: txd.input_key_imgs)
         {
-
+            int x = 0;
             // get absolute offsets of mixins
             std::vector<uint64_t> absolute_offsets
                     = cryptonote::relative_output_offsets_to_absolute(
@@ -4084,6 +4115,8 @@ public:
                 return j_response;
             }
 
+            json raw_inputs = raw_tx_data.at("vin")[x];
+            json raw_input_key = raw_inputs.at("key");
             inputs.push_back(json {
                     {"key_image"  , pod_to_hex(in_key.k_image)},
                     {"amount"     , in_key.amount},
@@ -4091,14 +4124,17 @@ public:
             });
 
             json& mixins = inputs.back()["mixins"];
-
+            int y = 0;
             for (const output_data_t& output_data: outputs)
             {
                 mixins.push_back(json {
                         {"public_key"  , pod_to_hex(output_data.pubkey)},
                         {"block_no"    , output_data.height},
+                        {"key_offset"  , raw_input_key.at("key_offsets")[y]}
                 });
+                y++;
             }
+            x++;
         }
 
         if (found_in_mempool == false)
@@ -4211,7 +4247,7 @@ public:
 
         j_response["status"] = "success";
 
-        return j_response;
+        return j_data;
     }
 
     /*
@@ -4228,8 +4264,7 @@ public:
 
         json& j_data = j_response["data"];
 
-        uint64_t current_blockchain_height
-                =  core_storage->get_current_blockchain_height();
+        uint64_t current_blockchain_height =  core_storage->get_current_blockchain_height();
 
         uint64_t block_height {0};
 
@@ -4304,6 +4339,27 @@ public:
         // sum of all transactions in the block
         uint64_t sum_fees = 0;
 
+        //nonce of the block
+        uint32_t blk_nonce = blk.nonce;
+
+        crypto::hash prev_hash = blk.prev_id;
+        crypto::hash next_hash = null_hash;
+
+        if (block_height + 1 <= current_blockchain_height)
+        {
+            next_hash = core_storage->get_block_id_by_height(block_height + 1);
+        }
+
+        bool have_next_hash = (next_hash == null_hash ? false : true);
+        bool have_prev_hash = (prev_hash == null_hash ? false : true);
+
+        // remove "<" and ">" from the hash string
+        string prev_hash_str = pod_to_hex(prev_hash);
+        string next_hash_str = pod_to_hex(next_hash);
+
+        // get age of the block relative to the server time
+        // pair<string, string> age = get_age(server_timestamp, blk.timestamp);
+
         // get tx details for the coinbase tx, i.e., miners reward
         tx_details txd_coinbase = get_tx_details(blk.miner_tx, true,
                                                  block_height,
@@ -4346,6 +4402,11 @@ public:
                 {"timestamp_utc" , xmreg::timestamp_to_str_gm(blk.timestamp)},
                 {"block_height"  , block_height},
                 {"size"          , blk_size},
+                {"nonce"         , blk_nonce},
+                {"prev_hash"     , prev_hash_str},
+                {"next_hash"     , next_hash_str},
+                {"have_next_hash", have_next_hash},
+                {"have_prev_hash", have_prev_hash},
                 {"txCount"       , j_txs.size()},
                 {"txs"           , j_txs},
                 {"current_height", current_blockchain_height}
@@ -5682,9 +5743,7 @@ private:
                 break;
 
             // get absolute offsets of mixins
-            std::vector<uint64_t> absolute_offsets
-                    = cryptonote::relative_output_offsets_to_absolute(
-                            in_key.key_offsets);
+            std::vector<uint64_t> absolute_offsets = cryptonote::relative_output_offsets_to_absolute(in_key.key_offsets);
 
             // get public keys of outputs used in the mixins that match to the offests
             std::vector<cryptonote::output_data_t> outputs;
@@ -5732,10 +5791,8 @@ private:
                     {"already_spent", false} // placeholder for later
             });
 
-            if (detailed_view)
-            {
-                boost::get<mstch::map>(inputs.back())["ring_sigs"]
-                        = txd.get_ring_sig_for_input(input_idx);
+            if (detailed_view) {
+                boost::get<mstch::map>(inputs.back())["ring_sigs"] = txd.get_ring_sig_for_input(input_idx);
             }
 
 
@@ -5751,8 +5808,7 @@ private:
             vector<uint64_t> mixin_timestamps;
 
             // get reference to mixins array created above
-            mstch::array& mixins = boost::get<mstch::array>(
-                    boost::get<mstch::map>(inputs.back())["mixins"]);
+            mstch::array& mixins = boost::get<mstch::array>(boost::get<mstch::map>(inputs.back())["mixins"]);
 
             // mixin counter
             size_t count = 0;
@@ -5943,8 +5999,7 @@ private:
             // thus for them, we print N/A
             if (!out_amount_indices.empty())
             {
-                out_amount_index_str
-                        = std::to_string(out_amount_indices.at(output_idx));
+                out_amount_index_str = std::to_string(out_amount_indices.at(output_idx));
             }
 
             outputs_xmr_sum += outp.second;

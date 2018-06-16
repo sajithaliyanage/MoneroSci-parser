@@ -110,7 +110,7 @@ namespace indexMapper{
 
         void insertBlockData(json blockData){
 //            sqlite3_mutex_enter(sqlite3_db_mutex(db));
-            char const *szSQL = "INSERT INTO BLOCK_DATA (DATA_ID,HEIGHT,HASH,TIMESTAMP,TIMESTAMP_UTC,SIZE,TX_COUNT) VALUES (?,?,?,?,?,?,?);";
+            char const *szSQL = "INSERT INTO BLOCK_DATA (DATA_ID,HEIGHT,HASH,TIMESTAMP,TIMESTAMP_UTC,SIZE,TX_COUNT,NONCE,PREV_HASH,NEXT_HASH) VALUES (?,?,?,?,?,?,?,?,?,?);";
             int rc = sqlite3_prepare(db, szSQL, -1, &stmt, &pzTest);
 
             if( rc == SQLITE_OK ) {
@@ -125,6 +125,11 @@ namespace indexMapper{
                     sqlite3_bind_text(stmt, 5,  timestamp_utc.c_str(), strlen(timestamp_utc.c_str()), 0);
                     sqlite3_bind_int(stmt, 6,  blockData.at("size"));
                     sqlite3_bind_int(stmt, 7, blockData.at("txCount"));
+                    sqlite3_bind_int(stmt, 8, blockData.at("nonce"));
+                    std::string pre_hash = blockData.at("prev_hash");
+                    sqlite3_bind_text(stmt, 9,  pre_hash.c_str(), strlen(pre_hash.c_str()), 0);
+                    std::string next_hash = blockData.at("next_hash");
+                    sqlite3_bind_text(stmt, 10,  next_hash.c_str(), strlen(next_hash.c_str()), 0);
 
                     // commit
                     sqlite3_step(stmt);
@@ -165,7 +170,7 @@ namespace indexMapper{
         void insertSAData(json saData){
             sqlite3_mutex_enter(sqlite3_db_mutex(db));
 
-            char const *szSQL = "INSERT INTO SA_DATA (DATA_ID,P_KEY,AMOUNT) VALUES (?,?,?);";
+            char const *szSQL = "INSERT INTO SA_DATA (DATA_ID,P_KEY,AMOUNT,AMOUNT_INDEX) VALUES (?,?,?,?);";
             int rc = sqlite3_prepare(db, szSQL, -1, &stmt, &pzTest);
 
             if( rc == SQLITE_OK ) {
@@ -175,6 +180,8 @@ namespace indexMapper{
                     std::string hash = saData.at("public_key");
                     sqlite3_bind_text(stmt, 2,  hash.c_str(), strlen(hash.c_str()), 0);
                     sqlite3_bind_int64(stmt, 3, saData.at("amount"));
+                    string amount_index = saData.at("amount_idx");
+                    sqlite3_bind_int(stmt, 4, atoi(amount_index.c_str()));
 
                     // commit
                     sqlite3_step(stmt);
@@ -232,7 +239,7 @@ namespace indexMapper{
         }
 
         void insertRMData(json rmData){
-            char const *szSQL = "INSERT INTO RM_DATA (DATA_ID,P_KEY,BLOCK_NO) VALUES (?,?,?);";
+            char const *szSQL = "INSERT INTO RM_DATA (DATA_ID,P_KEY,BLOCK_NO,KEY_OFFSET) VALUES (?,?,?,?);";
             int rc = sqlite3_prepare(db, szSQL, -1, &stmt, &pzTest);
 
             if( rc == SQLITE_OK ) {
@@ -242,6 +249,7 @@ namespace indexMapper{
                     std::string hash = rmData.at("public_key");
                     sqlite3_bind_text(stmt, 2,  hash.c_str(), strlen(hash.c_str()), 0);
                     sqlite3_bind_int(stmt, 3, rmData.at("block_no"));
+                    sqlite3_bind_int(stmt, 4, rmData.at("key_offset"));
 
                     // commit
                     sqlite3_step(stmt);
