@@ -150,65 +150,17 @@ int main(int ac, const char* av[]) {
 
     //iterate parser through the blockchain
     auto thread1 = std::thread(parse::mainFunction,std::ref(monerosci),current_blockchain_height);
+    auto thread2 = std::thread(parse::runBlockMainThread);
+    auto thread3 = std::thread(parse::runTxMainThread);
+    auto thread4 = std::thread(parse::runKeyImageMainThread);
 
-    auto thread8 = std::thread(parse::runSAIdHashMappingThread);
-    auto thread9 = std::thread(parse::runRMIdHashMappingThread);
+    auto thread5 = std::thread(parse::runSAIdHashMappingThread);
+    auto thread6 = std::thread(parse::runSAIndexStoreThread);
+    auto thread7 = std::thread(parse::runSaDataStoreThread);
 
-    auto thread2 = std::thread(parse::runBlockIdHashMappingThread);
-    auto thread3 = std::thread(parse::runBlockDataStoreThread);
-    auto thread4 = std::thread(parse::runBlockIndexStoreThread);
-
-    auto thread5 = std::thread(parse::runTxIdHashMappingThread);
-    auto thread6 = std::thread(parse::runTxDataStoreThread);
-    auto thread10 = std::thread(parse::runTxIndexStoreThread);
-
-    auto thread7 = std::thread(parse::runKeyImageIdHashMappingThread);
-    auto thread13 = std::thread(parse::runKeyImageDataStoreThread);
-
-    auto thread14 = std::thread(parse::runRingMemberStoreThread1);
-    auto thread22 = std::thread(parse::runRingMemberStoreThread2);
-    auto thread23 = std::thread(parse::runRingMemberStoreThread3);
-    auto thread24 = std::thread(parse::runRingMemberStoreThread4);
-    auto thread40 = std::thread(parse::runRingMemberStoreThread5);
-    auto thread41 = std::thread(parse::runRingMemberStoreThread6);
-    auto thread42 = std::thread(parse::runRingMemberStoreThread7);
-    auto thread43 = std::thread(parse::runRingMemberStoreThread8);
-    auto thread44 = std::thread(parse::runRingMemberStoreThread9);
-    auto thread45 = std::thread(parse::runRingMemberStoreThread10);
-
-
-    auto thread15 = std::thread(parse::runRMIndexStoreThread1);
-    auto thread25 = std::thread(parse::runRMIndexStoreThread2);
-    auto thread26 = std::thread(parse::runRMIndexStoreThread3);
-    auto thread27 = std::thread(parse::runRMIndexStoreThread4);
-    auto thread46 = std::thread(parse::runRMIndexStoreThread5);
-    auto thread47 = std::thread(parse::runRMIndexStoreThread6);
-    auto thread48 = std::thread(parse::runRMIndexStoreThread7);
-    auto thread49 = std::thread(parse::runRMIndexStoreThread8);
-    auto thread50 = std::thread(parse::runRMIndexStoreThread9);
-    auto thread51 = std::thread(parse::runRMIndexStoreThread10);
-
-    auto thread12 = std::thread(parse::runSAIndexStoreThread1);
-    auto thread19 = std::thread(parse::runSAIndexStoreThread2);
-    auto thread20 = std::thread(parse::runSAIndexStoreThread3);
-    auto thread21 = std::thread(parse::runSAIndexStoreThread4);
-    auto thread34 = std::thread(parse::runSAIndexStoreThread5);
-    auto thread35 = std::thread(parse::runSAIndexStoreThread6);
-    auto thread36 = std::thread(parse::runSAIndexStoreThread7);
-    auto thread37 = std::thread(parse::runSAIndexStoreThread8);
-    auto thread38 = std::thread(parse::runSAIndexStoreThread9);
-    auto thread39 = std::thread(parse::runSAIndexStoreThread10);
-
-    auto thread11 = std::thread(parse::runSaDataStoreThread1);
-    auto thread16 = std::thread(parse::runSaDataStoreThread2);
-    auto thread17 = std::thread(parse::runSaDataStoreThread3);
-    auto thread18 = std::thread(parse::runSaDataStoreThread4);
-    auto thread28 = std::thread(parse::runSaDataStoreThread5);
-    auto thread29 = std::thread(parse::runSaDataStoreThread6);
-    auto thread30 = std::thread(parse::runSaDataStoreThread7);
-    auto thread31 = std::thread(parse::runSaDataStoreThread8);
-    auto thread32 = std::thread(parse::runSaDataStoreThread9);
-    auto thread33 = std::thread(parse::runSaDataStoreThread10);
+    auto thread8 = std::thread(parse::runRMIdHashMappingThread);
+    auto thread9 = std::thread(parse::runRingMemberStoreThread);
+    auto thread10 = std::thread(parse::runRMIndexStoreThread);
 
     thread1.join();
     thread2.join();
@@ -217,50 +169,9 @@ int main(int ac, const char* av[]) {
     thread5.join();
     thread6.join();
     thread7.join();
-    thread10.join();
-    thread13.join();
-    thread14.join();
-    thread15.join();
     thread8.join();
     thread9.join();
-    thread11.join();
-    thread12.join();
-    thread16.join();
-    thread17.join();
-    thread18.join();
-    thread19.join();
-    thread20.join();
-    thread21.join();
-    thread22.join();
-    thread23.join();
-    thread24.join();
-    thread25.join();
-    thread26.join();
-    thread27.join();
-    thread28.join();
-    thread29.join();
-    thread30.join();
-    thread31.join();
-    thread32.join();
-    thread33.join();
-    thread34.join();
-    thread35.join();
-    thread36.join();
-    thread37.join();
-    thread38.join();
-    thread39.join();
-    thread40.join();
-    thread41.join();
-    thread42.join();
-    thread43.join();
-    thread44.join();
-    thread45.join();
-    thread46.join();
-    thread47.join();
-    thread48.join();
-    thread49.join();
-    thread50.join();
-    thread51.join();
+    thread10.join();
 
     //end date and time
     time (& End);
