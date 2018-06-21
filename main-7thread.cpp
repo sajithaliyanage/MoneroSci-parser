@@ -58,8 +58,8 @@ int main(int ac, const char* av[]) {
     }
 
     const cryptonote::network_type nettype = testnet ?
-                                             cryptonote::network_type::TESTNET : stagenet ?
-                                                                                 cryptonote::network_type::STAGENET : cryptonote::network_type::MAINNET;
+          cryptonote::network_type::TESTNET : stagenet ?
+          cryptonote::network_type::STAGENET : cryptonote::network_type::MAINNET;
 
     bool enable_pusher                {*enable_pusher_opt};
     bool enable_js                    {*enable_js_opt};
@@ -137,27 +137,8 @@ int main(int ac, const char* av[]) {
 
     //get current block-height
     uint64_t current_blockchain_height =  core_storage->get_current_blockchain_height();
-    cout << "Current Monero blockchain Height - " << current_blockchain_height << endl;
+    cout << "Current blockchain Height - " << current_blockchain_height << endl;
     // run the crow http server
-
-    //check the last saved block height
-    string last_block = parse::getLastSavedBlockHeight();
-    int start_block_height = atoi(last_block.c_str()) + 1;
-    int end_block_height;
-
-    cout << "MoneroSci currently parsed block height - "<< last_block<< endl;
-    string userInputBlock;
-    cout << "Enter how many blocks need to parse: ";
-    cin >> userInputBlock;
-    end_block_height = atoi(userInputBlock.c_str());
-
-    cout << "MoneroSci-Parser started to parse blocks range of "<<start_block_height<<" to "<< end_block_height<< endl;
-    if(start_block_height>=end_block_height){
-        cout << "MoneroSci has parsed upto "<<last_block<<" blocks already";
-        cout <<" "<< endl;
-        cout << "The MoneroSci-parser is terminating." << endl;
-        return EXIT_SUCCESS;
-    }
 
     auto now = std::chrono::system_clock::now();
     auto now_c = std::chrono::system_clock::to_time_t(now);
@@ -166,33 +147,38 @@ int main(int ac, const char* av[]) {
     time_t Start, End;
     time (& Start);
 
-    //iterate parser through the blockchain
-    auto thread1 = std::thread(parse::mainFunction,std::ref(monerosci),start_block_height,end_block_height,current_blockchain_height);
-    auto thread2 = std::thread(parse::runBlockMainThread);
-    auto thread3 = std::thread(parse::runTxMainThread);
-    auto thread4 = std::thread(parse::runKeyImageMainThread);
 
-    auto thread5 = std::thread(parse::runSAIdHashMappingThread);
-    auto thread6 = std::thread(parse::runSAIndexStoreThread);
-    auto thread7 = std::thread(parse::runSaDataStoreThread);
+    unsigned concurentThreadsSupported = std::thread::hardware_concurrency();
+    cout << "NUMBER OF CORES IN THE RUNNING MACHINE IS - "<< concurentThreadsSupported << " CORES" << endl;
 
-    auto thread8 = std::thread(parse::runRMIdHashMappingThread);
-    auto thread9 = std::thread(parse::runRingMemberStoreThread);
-    auto thread10 = std::thread(parse::runRMIndexStoreThread);
+    int producerThredCount = concurentThreadsSupported -1;
+    cout << "PRODUCER THREAD COUNT IS - " << producerThredCount << endl;
+    cout << "CONSUMER THREAD COUNT IS - 1" << endl;
 
-    thread1.join();
+//    int maxBlockHeight = current_blockchain_height;
+    int maxBlockHeight = 10000;
+
+    vector<std::vector<int>> blockchainRanges = parse::getProducerRangers(producerThredCount, maxBlockHeight);
+
+    //producer threads - iterate parser through the blockchain by deviding eqal potions
+    std::thread t[producerThredCount];
+    for(int i = 0; i<producerThredCount; i++){
+        cout << "STARTED PRODUCER THREAD NUMBER -"<< i+1 << " RANGE ( "<<blockchainRanges[i][0]<<" TO "<< blockchainRanges[i][1] << " )"<< endl;
+        t[i]= std::thread(parse::dataProducerFunction, std::ref(monerosci),blockchainRanges[i][0],blockchainRanges[i][1]);
+    }
+
+    //start consumer thread
+    cout << "STARTED CONSUMER THREAD NUMBER -"<< 1 << endl;
+    auto thread2 = std::thread(parse::dataConsumerThread,maxBlockHeight);
+
+    // Wait for threads, which are running concurrently, to finish
+    for(int i = 0; i<producerThredCount; i++){
+        t[i].join();
+    }
+
+    parse::isAllBlockDone = true;
     thread2.join();
-    thread3.join();
-    thread4.join();
-    thread5.join();
-    thread6.join();
-    thread7.join();
-    thread8.join();
-    thread9.join();
-    thread10.join();
 
-    //store last saved block height
-    parse::storeLastSavedBlockHeight(end_block_height);
 
     //end date and time
     time (& End);

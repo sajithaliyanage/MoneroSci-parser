@@ -51,7 +51,6 @@ namespace parse {
     int lastOutputId;
     int lastInputId;
     int lastRingMemberId;
-    bool isFromBegining = false;
 
     BloomFilter bloomFilter; //instance of bloom-filter
     hashmapper::idHashMapperDB ringMemberHashMap ("blockchain-xmr", "hash-id-mapping", "ring-members");
@@ -75,29 +74,27 @@ namespace parse {
 
     std::mutex mtxk;          //mutex for KIdata vectors
 
-    std::mutex checker;       //mutex for access isBegining boolean
-
     //global data store in memory as vectors for HASH-ID MAPPING
     std::vector<std::vector<string>> blockHashIdVector;         //store block hash-id
     std::vector<std::vector<string>> txHashIdVector;            //store tx hash-id
     std::vector<std::vector<string>> keyImageHashIdVector;      //store key-image hash-id
     std::vector<std::vector<string>> saHashIdVector;            //store stealth-address hash-id
-    std::map<string,int> rmHashIdVector;                        //store ring-member hash-id
+    std::map<string,string> rmHashIdVector;                        //store ring-member hash-id
 
     //global data store in memory as vector for INDEX and DETAILS
     std::vector<json> outputOfBlock;
-    std::vector<std::vector<int>> outputIndexOfBlock;            //store block details & indexes
+    std::vector<std::vector<string>> outputIndexOfBlock;            //store block details & indexes
 
     std::vector<json> outputOfStealthAddresses;
-    std::vector<std::vector<int>> outputIndexOfStealthAddresses; //store Stealth-Addresses details & indexes
+    std::vector<std::vector<string>> outputIndexOfStealthAddresses; //store Stealth-Addresses details & indexes
 
     std::vector<std::vector<string>> outputOfKeyImages;          //store KeyImages details & indexes
 
     std::vector<json> outputOfRingMembers;
-    std::vector<std::vector<int>> outputIndexOfRingMembers;      //store RingMembers details & indexes
+    std::vector<std::vector<string>> outputIndexOfRingMembers;      //store RingMembers details & indexes
 
     std::vector<json> outputOfTx;
-    std::vector<std::vector<int>> outputIndexOfTx;               //store Tx details & indexes
+    std::vector<std::vector<string>> outputIndexOfTx;               //store Tx details & indexes
 
     void storeLastBlockId(int lastBlockId){
         hashmapper::idHashMapperDB map ("blockchain-xmr", "hash-id-mapping", "lastIds");
@@ -138,12 +135,6 @@ namespace parse {
     void storeLastInputId(int lastInputId){
         hashmapper::idHashMapperDB map ("blockchain-xmr", "hash-id-mapping", "lastIds");
         map.insertKey("lastInputId",to_string(lastInputId));
-        map.close();
-    }
-
-    void storeLastSavedBlockHeight(int blk_height){
-        hashmapper::idHashMapperDB map ("blockchain-xmr", "hash-id-mapping", "lastIds");
-        map.insertKey("lastBlockHeight",to_string(blk_height));
         map.close();
     }
 
@@ -194,19 +185,6 @@ namespace parse {
         string val = map.getValueFromKey("lastInputId");
         map.close();
         return val;
-    }
-
-    string getLastSavedBlockHeight(){
-        hashmapper::idHashMapperDB map ("blockchain-xmr", "hash-id-mapping", "lastIds");
-        string last_saved_blk_height = map.getValueFromKey("lastBlockHeight");
-        map.close();
-
-        if(last_saved_blk_height == "null"){
-            isFromBegining = true;
-            last_saved_blk_height = "0";
-        }
-
-        return last_saved_blk_height;
     }
 
     json blockDetails(page& monerosci, string blk_height) {
@@ -272,6 +250,7 @@ namespace parse {
         }else{
             lastRingMemberId = atoi(last_rm_id.c_str());
         }
+
     }
 
     void storeLastIdList(){
@@ -285,26 +264,43 @@ namespace parse {
         storeLastInputId(lastInputId);
     }
 
-#pragma warning(disable:4700)
+    void showCurrentStatus(int currentBlockHeight){
+        cout << "" << endl;
+        cout << "----------------------------------------------------------" << endl;
+        cout << currentBlockHeight << " - BLOCK DATA HAS LOADED TO THE MAIN MEMORY" << endl;
+        cout << "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ " << endl;
+        cout << "TOTAL BLOCKS            -" << lastBlockId<< endl;
+        cout << "TOTAL TRANSACTIONS      -" << lastTransactionId<< endl;
+        cout << "TOTAL KEY-IMAGES        -" << lastKeyImageId<< endl;
+        cout << "TOTAL STEALTH ADDRESSES -" << lastStealthAddressId<< endl;
+        cout << "TOTAL RING MEMBERS      -" << lastRingMemberId<<"  (WITHOUT DUPLICATES)"<< endl;
+        cout << "----------------------------------------------------------" << endl;
+        cout << "" << endl;
+    }
+
+    #pragma warning(disable:4700)
     void xmrProcessor(page& monerosci,string blk_height){
+        //block_id
+        string currentBlockID = blk_height;
+
         //get block details
         json blockData= blockDetails(monerosci,blk_height);
         string blk_hash = blockData.at("hash");
 
         //store block map of hash-id in vector
-        std::vector<string> blockVector = {blk_hash,to_string(lastBlockId)};
+        std::vector<string> blockVector = {blk_hash,currentBlockID};
         mtxh2.lock();
         blockHashIdVector.push_back(blockVector);
         mtxh2.unlock();
 
         //store data on block detail vector
-        blockData["lastBlockId"] = lastBlockId;
+        blockData["lastBlockId"] = currentBlockID;
         mtxb1.lock();
         outputOfBlock.push_back(blockData);
         mtxb1.unlock();
 
         //insert data into the indexes table
-        std::vector<int> blockId = {lastBlockId};
+        std::vector<string> blockId = {currentBlockID};
         mtxb2.lock();
         outputIndexOfBlock.push_back(blockId);
         mtxb2.unlock();
@@ -321,13 +317,15 @@ namespace parse {
 
 //        cout << "Include Transaction Count - "<< txCount<<endl;
         for(int x=0;x<txCount;x++){
+            string currentTxID = currentBlockID +"-"+to_string(x);
+
             string curTx = txs[x]["tx_hash"];
             json transactionData = transactionDetails(monerosci, curTx);
 
             string txHash = transactionData.at("tx_hash");
 
             //store tx map of hash-id in vector
-            std::vector<string> txVector = {txHash,to_string(lastTransactionId)};
+            std::vector<string> txVector = {txHash,currentTxID};
             mtxh3.lock();
             txHashIdVector.push_back(txVector);
             mtxh3.unlock();
@@ -341,30 +339,28 @@ namespace parse {
             json outputs = transactionData.at("outputs");
 
             for(int y=0; y < outputs.size(); y++){
+                string currentOutputID = currentBlockID+"-"+to_string(x)+"-"+to_string(y);
+
                 //output public-key
                 string sa_hash = outputs[y]["public_key"];
 
                 //store tx map of hash-id in vector
-                std::vector<string> saVector = {sa_hash,to_string(lastStealthAddressId)};
+                std::vector<string> saVector = {sa_hash,currentOutputID};
                 mtxh1.lock();
                 saHashIdVector.push_back(saVector);
                 mtxh1.unlock();
 
                 //store SA data in SA detail table
-                outputs[y]["lastSAId"] = lastOutputId;
+                outputs[y]["lastSAId"] = currentOutputID;
                 mtx.lock();
                 outputOfStealthAddresses.push_back(outputs[y]);
                 mtx.unlock();
 
                 //insert data into the indexes table
-                std::vector<int> tempIndexData = {lastTransactionId,lastStealthAddressId,lastOutputId,lastBlockId};
+                std::vector<string> tempIndexData = {currentTxID,currentOutputID,currentOutputID,currentBlockID};
                 mtx2.lock();
                 outputIndexOfStealthAddresses.push_back(tempIndexData);
                 mtx2.unlock();
-
-                //increment stealth-address id
-                lastStealthAddressId += 1;
-                lastOutputId += 1;
             }
 
             /*
@@ -376,17 +372,19 @@ namespace parse {
             json inputs = transactionData.at("inputs");
 
             for(int y=0; y < inputs.size(); y++){
+                string currentInputID = currentBlockID+"-"+to_string(x)+"-"+to_string(y);
+
                 //output public-key
                 string key_image = inputs[y]["key_image"];
 
                 //store tx map of hash-id in vector
-                std::vector<string> keyImageVector = {key_image,to_string(lastKeyImageId)};
+                std::vector<string> keyImageVector = {key_image,currentInputID};
                 mtxh4.lock();
                 keyImageHashIdVector.push_back(keyImageVector);
                 mtxh4.unlock();
 
                 //store RM data in RM detail table
-                std::vector<string> tempDetailData = {to_string(lastKeyImageId),key_image,to_string(lastBlockId),to_string(lastTransactionId)};
+                std::vector<string> tempDetailData = {currentInputID,key_image,currentBlockID,currentTxID};
                 mtxk.lock();
                 outputOfKeyImages.push_back(tempDetailData);
                 mtxk.unlock();
@@ -394,9 +392,10 @@ namespace parse {
                 //consider transaction inputs - Ring Members
                 json mixins = inputs[y]["mixins"];
                 for(int z=0; z < mixins.size(); z++){
+                    string currentRingMemberID = currentBlockID+"-"+to_string(x)+"-"+to_string(y)+"-"+to_string(z);
 
                     //ring member public-key
-                    int currentRingMemberId;
+                    string currentRingMemberId_temp;
                     string ring_key_image = mixins[z]["public_key"];
 
                     //find that ring-member is already in the bloom-filter
@@ -406,96 +405,109 @@ namespace parse {
                         //value is in the bloom-filter
                         int nowId;
                         mtxh5.lock();
-                        nowId= rmHashIdVector.find(ring_key_image)->second;
+                        nowId = rmHashIdVector.count(ring_key_image);
                         mtxh5.unlock();
 
                         if(nowId){
                             //value is in the memory
-                            currentRingMemberId = nowId;
+                            currentRingMemberId_temp = rmHashIdVector.find(ring_key_image)->second;
                         }else{
                             //value is in the database
                             string idIsExists = ringMemberHashMap.isKeyExist(ring_key_image);
 
                             if(idIsExists == "null"){
-                                currentRingMemberId = lastRingMemberId;
+                                currentRingMemberId_temp = currentRingMemberID;
                             }else{
-                                currentRingMemberId = atoi(idIsExists.c_str());
+                                currentRingMemberId_temp = idIsExists;
                             }
                         }
                     }else{
-                        currentRingMemberId = lastRingMemberId;
+                        currentRingMemberId_temp = currentRingMemberID;
                         bloomFilter.add(ring_key_image.c_str());              //add the ring-hash to the bloom filter
 
                         mtxh5.lock();
-                        rmHashIdVector[ring_key_image]=lastRingMemberId;       //add ringMemHash-id mapping to the memory
+                        rmHashIdVector[ring_key_image]=currentRingMemberID;   //add ringMemHash-id mapping to the memory
                         mtxh5.unlock();
-
-                        lastRingMemberId += 1;
                     }
 
                     //store RM data in RM detail table
-                    mixins[z]["lastRingId"] = lastInputId;
+                    mixins[z]["lastRingId"] = currentRingMemberID;
                     mtx3.lock();
                     outputOfRingMembers.push_back(mixins[z]);
                     mtx3.unlock();
 
                     //insert data into the indexes table
-                    std::vector<int> tempIndexRingData = {lastInputId,lastTransactionId,lastKeyImageId,currentRingMemberId,lastBlockId};
+                    std::vector<string> tempIndexRingData = {currentRingMemberID,currentTxID,currentInputID,currentRingMemberId_temp,currentBlockID};
                     mtx4.lock();
                     outputIndexOfRingMembers.push_back(tempIndexRingData);
                     mtx4.unlock();
-
-                    lastInputId += 1;
                 }
-
-                lastKeyImageId += 1;
             }
 
             //store data on block detail table
-            transactionData["lastTxId"] = lastTransactionId;
+            transactionData["lastTxId"] = currentTxID;
             mtxt1.lock();
             outputOfTx.push_back(transactionData);
             mtxt1.unlock();
 
             //insert data into the indexes table
-            std::vector<int> txId = {lastTransactionId,lastBlockId,lastTransactionId};
+            std::vector<string> txId = {currentTxID,currentBlockID,currentTxID};
             mtxt2.lock();
             outputIndexOfTx.push_back(txId);
             mtxt2.unlock();
-
-            lastTransactionId += 1;
         }
-
-        lastBlockId += 1;
     }
 
-    //BLOCK-DATA-STORE
-    void runBlockMainThread(){
+    void dataConsumerThread(int all_block_size){
         //create id-hash map connection
         hashmapper::idHashMapperDB mapCon ("blockchain-xmr", "hash-id-mapping", "blocks");
-        bool is_begining = false;
+        hashmapper::idHashMapperDB map2 ("blockchain-xmr", "hash-id-mapping", "tx");
+        hashmapper::idHashMapperDB map3 ("blockchain-xmr", "hash-id-mapping", "key-images");
+        hashmapper::idHashMapperDB map4 ("blockchain-xmr", "hash-id-mapping", "stealth-address");
 
-        checker.lock();
-        if(isFromBegining){
-            is_begining = true;
-        }
-        checker.unlock();
 
         //create database connection for blocks
-        indexMapper::indexes dbConnectionBlock ("blockchain-xmr", "monero-data", "blocks" ,is_begining);
+        indexMapper::indexes dbConnectionBlock ("blockchain-xmr", "monero-data", "blocks" ,true);
+        indexMapper::indexes dbConnectionTx ("blockchain-xmr", "monero-data", "tx",true);
+        indexMapper::indexes dbConnectionKI ("blockchain-xmr", "monero-data", "key-image", true);
+        indexMapper::indexes dbConnectionSA ("blockchain-xmr", "monero-data","stealth-address" ,true );
+        indexMapper::indexes dbConnectionSAIndex ("blockchain-xmr", "monero-indexes", "stealth-address",true);
+        indexMapper::indexes dbConnectionRM ("blockchain-xmr", "monero-data", "ring-members",true);
+        indexMapper::indexes dbConnectionRMIndex ("blockchain-xmr", "monero-indexes", "ring-members",true);
 
-        if(isFromBegining){
-            //create block data table and index table
-            dbConnectionBlock.createTable(blockDetailsTable);
-            dbConnectionBlock.createTable(blockIndexTable);
-        }
+
+        //create block data table and index table
+        dbConnectionBlock.createTable(blockDetailsTable);
+        dbConnectionBlock.createTable(blockIndexTable);
+        dbConnectionTx.createTable(txDetailsTable);
+        dbConnectionTx.createTable(txIndexTable);
+        dbConnectionKI.createTable(keyImageTable);
+        dbConnectionSA.createTable(saDetailTable);
+        dbConnectionSAIndex.createTable(saIndexTable);
+        dbConnectionRM.createTable(rmDetailTable);
+        dbConnectionRMIndex.createTable(rmIndexTable);
 
         int blockHash,blockData,blockIndex = 0;
         std::vector<json> bData;
-        std::vector<std::vector<int>> bIndex;
+        std::vector<std::vector<string>> bIndex;
+
+        int txHash,txData,txIndex = 0;
+        std::vector<json> tData;
+        std::vector<std::vector<string>> tIndex;
+
+        int keyImageData,keyImageHash = 0;
+        std::vector<std::vector<string>> kData;
+
+        int saHash,saData,saIndex =0;
+        std::vector<json> temp;
+        std::vector<std::vector<string>> tempAr;
+
+        int rmHash,rmData,rmIndex = 0;
+        std::vector<json> tempInp;
+        std::vector<std::vector<string>> tempArRI;
 
         while (true){
-            //chech hash-id map
+            //######################################################-----BLOCK-THREAD-START-------#############################
             if(!blockHashIdVector.empty()){
                 std::vector<std::vector<string>> h2;
 
@@ -510,7 +522,6 @@ namespace parse {
                 mapCon.insertKey(blk_hash,lastBlockId);
                 h2.erase (h2.begin());
                 blockHash++;
-
             }
 
             //check block-data store
@@ -558,45 +569,7 @@ namespace parse {
                 bIndex.clear();
             }
 
-            if(isAllBlockDone && blockHashIdVector.empty() && outputOfBlock.empty() && outputIndexOfBlock.empty()){
-                break;
-            }
-        }
-
-        mapCon.close();
-        dbConnectionBlock.close();
-        cout <<"BLOCK ID-HASH STORING THREAD COMPLETED. STORED " << blockHash << " BLOCK HASHES" << endl;
-        cout <<"BLOCK DATA STORING THREAD COMPLETED. STORED " << blockData << " BLOCK DETAILS" << endl;
-        cout <<"BLOCK INDEX STORING THREAD COMPLETED. STORED " << blockIndex << " BLOCK INDEXES" << endl;
-    }
-
-    //TX-DATA-STORE
-    void runTxMainThread(){
-        //create id-hash connection
-        hashmapper::idHashMapperDB map2 ("blockchain-xmr", "hash-id-mapping", "tx");
-        bool is_begining = false;
-
-        checker.lock();
-        if(isFromBegining){
-            is_begining = true;
-        }
-        checker.unlock();
-
-        //create database connection
-        indexMapper::indexes dbConnectionTx ("blockchain-xmr", "monero-data", "tx",is_begining);
-
-        if(is_begining){
-            //create tx-data table and index table
-            dbConnectionTx.createTable(txDetailsTable);
-            dbConnectionTx.createTable(txIndexTable);
-        }
-
-        int txHash,txData,txIndex = 0;
-        std::vector<json> tData;
-        std::vector<std::vector<int>> tIndex;
-
-        while (true){
-            //check id-hash map
+            //######################################################-----TX-THREAD-START-------#############################
             if(!txHashIdVector.empty()){
                 std::vector<std::vector<string>> h3;
 
@@ -659,44 +632,7 @@ namespace parse {
                 tIndex.clear();
             }
 
-            //check break condition to end the while loop
-            if(txHashIdVector.empty() && isAllBlockDone && outputOfTx.empty() && outputIndexOfTx.empty()){
-                break;
-            }
-        }
-
-        map2.close();
-        dbConnectionTx.close();
-        cout <<"TX ID-HASH STORING THREAD COMPLETED. STORED " << txHash << " HASHES" << endl;
-        cout <<"TX DATA STORING THREAD COMPLETED. STORED " << txData <<" TXES"<< endl;
-        cout <<"TX INDEX STORING THREAD COMPLETED. STORED " << txIndex << " TX INDEXES" << endl;
-    }
-
-    //KEY-IMAGE-STORE
-    void runKeyImageMainThread(){
-        //create id-hash connection
-        hashmapper::idHashMapperDB map3 ("blockchain-xmr", "hash-id-mapping", "key-images");
-        bool is_begining = false;
-
-        checker.lock();
-        if(isFromBegining){
-            is_begining = true;
-        }
-        checker.unlock();
-
-        //create database connection
-        indexMapper::indexes dbConnectionKI ("blockchain-xmr", "monero-data", "key-image", is_begining);    //init database instance globally
-
-        if(is_begining){
-            //create data table for tx details
-            dbConnectionKI.createTable(keyImageTable);
-        }
-
-        int keyImageData,keyImageHash = 0;
-        std::vector<std::vector<string>> kData;
-
-        while (true){
-            //check hash-id map
+            //######################################################-----KEY-IMAGE-THREAD-START-------#############################
             if(!keyImageHashIdVector.empty()){
                 std::vector<std::vector<string>> h4;
 
@@ -737,23 +673,7 @@ namespace parse {
                 kData.clear();
             }
 
-            //check condition to break the loop
-            if(keyImageHashIdVector.empty() && isAllBlockDone && outputOfKeyImages.empty()){
-                break;
-            }
-        }
-
-        map3.close();
-        dbConnectionKI.close();
-        cout <<"KEY-IMAGE ID-HASH STORING THREAD COMPLETED. STORED " << keyImageHash << " HASHES"<< endl;
-        cout <<"KEY-IMAGE DATA STORING THREAD COMPLETED. STORED " << keyImageData << " KEY-IMAGES" << endl;
-    }
-
-    void runSAIdHashMappingThread(){
-        hashmapper::idHashMapperDB map4 ("blockchain-xmr", "hash-id-mapping", "stealth-address");
-        int i=0;
-
-        while (true){
+            //######################################################-----STEALTH-ADDRESS-THREAD-START-------##########################
             if(!saHashIdVector.empty()){
                 std::vector<std::vector<string>> h1;
 
@@ -766,48 +686,20 @@ namespace parse {
 
                 map4.insertKey(sa_hash,lastSAId);
                 h1.erase(h1.begin());
-                i++;
-            }else if(saHashIdVector.empty() && isAllBlockDone){
-                break;
+                saHash++;
             }
-        }
-
-        map4.close();
-        cout <<"STEALTH-ADDRESS ID-HASH STORING THREAD COMPLETED. STORED " <<i << " HASHES" << endl;
-    }
-    void runSaDataStoreThread(){
-        time_t Start,End;
-        bool oneTime = true;
-        bool is_begining = false;
-
-        checker.lock();
-        if(isFromBegining){
-            is_begining = true;
-        }
-        checker.unlock();
-
-        indexMapper::indexes dbConnectionSA ("blockchain-xmr", "monero-data","stealth-address" ,is_begining );    //init database instance globally
-        long i = 0;
-
-        if(is_begining){
-            //create data table for tx details
-            dbConnectionSA.createTable(saDetailTable);
-        }
-
-        while (true){
-            std::vector<json> temp;
 
             mtx.lock();
             if(outputOfStealthAddresses.size() >= 1000){
                 long currentSize = outputOfStealthAddresses.size();
                 temp = outputOfStealthAddresses;
-                i += currentSize;
+                saData += currentSize;
 
                 outputOfStealthAddresses.erase(outputOfStealthAddresses.begin(),outputOfStealthAddresses.begin()+currentSize);
             }else if(outputOfStealthAddresses.size() < 1000 & isAllBlockDone){
                 long currentSize = outputOfStealthAddresses.size();
                 temp = outputOfStealthAddresses;
-                i += currentSize;
+                saData += currentSize;
 
                 outputOfStealthAddresses.erase(outputOfStealthAddresses.begin(),outputOfStealthAddresses.begin()+currentSize);
             }
@@ -816,64 +708,20 @@ namespace parse {
             if(!temp.empty()){
                 dbConnectionSA.insertSAData(temp);
                 temp.clear();
-
-                if(isAllBlockDone){
-                    time (& End);
-                    if(oneTime){
-                        time (& Start);
-                        oneTime = false;
-                    }
-                    double dif= difftime (End, Start);
-                    if(dif > 90){
-                        cout<<"STORED STEALTH-ADDRESS DATA COUNT -" << i <<"/"<<lastStealthAddressId << endl;
-                        time (& Start);
-
-                    }
-                }
             }
-
-            if(outputOfStealthAddresses.empty() && isAllBlockDone){
-                break;
-            }
-
-        }
-        dbConnectionSA.close();
-        cout << "SA DATA STORING THREAD COMPLETED. STORED " << i << " STEALTH-ADDRESSES" << endl;
-    }
-    void runSAIndexStoreThread(){
-        time_t Start,End;
-        bool oneTime = true;
-        bool is_begining = false;
-
-        checker.lock();
-        if(isFromBegining){
-            is_begining = true;
-        }
-        checker.unlock();
-
-        int i = 0;
-        indexMapper::indexes dbConnectionSAIndex ("blockchain-xmr", "monero-indexes", "stealth-address",is_begining);    //init database instance globally
-
-        if(is_begining){
-            dbConnectionSAIndex.createTable(saIndexTable);
-        }
-
-
-        while (true){
-            std::vector<std::vector<int>> tempAr;
 
             mtx2.lock();
             if(outputIndexOfStealthAddresses.size() >= 1000){
                 long currentSize = outputIndexOfStealthAddresses.size();
                 tempAr = outputIndexOfStealthAddresses;
-                i += currentSize;
+                saIndex += currentSize;
 
                 outputIndexOfStealthAddresses.erase(outputIndexOfStealthAddresses.begin(),outputIndexOfStealthAddresses.begin()+currentSize);
 
             }else if(outputIndexOfStealthAddresses.size() < 1000 & isAllBlockDone){
                 long currentSize = outputIndexOfStealthAddresses.size();
                 tempAr = outputIndexOfStealthAddresses;
-                i += currentSize;
+                saIndex += currentSize;
 
                 outputIndexOfStealthAddresses.erase(outputIndexOfStealthAddresses.begin(),outputIndexOfStealthAddresses.begin()+currentSize);
             }
@@ -882,64 +730,34 @@ namespace parse {
             if(!tempAr.empty()){
                 dbConnectionSAIndex.insertSAIndex(tempAr);
                 tempAr.clear();
-
-                if(isAllBlockDone){
-                    time (& End);
-                    if(oneTime){
-                        time (& Start);
-                        oneTime = false;
-                    }
-                    double dif= difftime (End, Start);
-                    if(dif > 90){
-                        cout <<"STORED STEALTH-ADDRESS INDEX COUNT -" << i <<"/"<<lastStealthAddressId << endl;
-                        time (& Start);
-
-                    }
-                }
             }
 
-            if(outputIndexOfStealthAddresses.empty() && isAllBlockDone){
-                break;
+            //######################################################-----RING-MEMBER-THREAD-START-------##########################
+            if(!rmHashIdVector.empty()){
+                string rm_hash;
+                string lastRMId;
+                mtxh5.lock();
+                rm_hash = rmHashIdVector.begin()->first;
+                lastRMId = rmHashIdVector.begin()->second;
+                rmHashIdVector.erase(rmHashIdVector.begin());
+                mtxh5.unlock();
+
+                ringMemberHashMap.insertKey(rm_hash,lastRMId);
+                rmHash++;
             }
-        }
-        dbConnectionSAIndex.close();
-        cout <<"SA INDEX STORING THREAD COMPLETED. STORED " <<i << " SA INDEXES" << endl;
-    }
-
-    void runRingMemberStoreThread(){
-        time_t Start,End;
-        bool oneTime = true;
-        bool is_begining = false;
-
-        checker.lock();
-        if(isFromBegining){
-            is_begining = true;
-        }
-        checker.unlock();
-
-        indexMapper::indexes dbConnectionRM ("blockchain-xmr", "monero-data", "ring-members",isFromBegining);    //init database instance globally
-        int i = 0;
-
-        if(is_begining){
-            //create data table for tx details
-            dbConnectionRM.createTable(rmDetailTable);
-        }
-
-        while (true){
-            std::vector<json> tempInp;
 
             mtx3.lock();
             if(outputOfRingMembers.size() >= 1000){
                 long currentSize = outputOfRingMembers.size();
                 tempInp = outputOfRingMembers;
-                i += currentSize;
+                rmData += currentSize;
 
                 outputOfRingMembers.erase(outputOfRingMembers.begin(),outputOfRingMembers.begin()+currentSize);
 
             }else if(outputOfRingMembers.size() < 1000 & isAllBlockDone){
                 long currentSize = outputOfRingMembers.size();
                 tempInp = outputOfRingMembers;
-                i += currentSize;
+                rmData += currentSize;
 
                 outputOfRingMembers.erase(outputOfRingMembers.begin(),outputOfRingMembers.begin()+currentSize);
             }
@@ -948,62 +766,20 @@ namespace parse {
             if(!tempInp.empty()){
                 dbConnectionRM.insertRMData(tempInp);
                 tempInp.clear();
-
-                if(isAllBlockDone){
-                    time (& End);
-                    if(oneTime){
-                        time (& Start);
-                        oneTime = false;
-                    }
-                    double dif= difftime (End, Start);
-                    if(dif > 90){
-                        cout <<"STORED RING-MEMBER DATA COUNT -" << i <<"/"<<lastStealthAddressId << endl;
-                        time (& Start);
-
-                    }
-                }
             }
-            if(outputOfRingMembers.empty() && isAllBlockDone){
-                break;
-            }
-        }
-        dbConnectionRM.close();
-        cout << "RING-MEMBER DATA STORING THREAD COMPLETED. STORED " <<i << " RING-MEMBERS" << endl;
-    }
-    void runRMIndexStoreThread(){
-        time_t Start,End;
-        bool oneTime = true;
-        bool is_begining = false;
-
-        checker.lock();
-        if(isFromBegining){
-            is_begining = true;
-        }
-        checker.unlock();
-
-        int i = 0;
-
-        indexMapper::indexes dbConnectionRMIndex ("blockchain-xmr", "monero-indexes", "ring-members",is_begining);    //init database instance globally
-
-        if(is_begining){
-            dbConnectionRMIndex.createTable(rmIndexTable);
-        }
-
-        while (true){
-            std::vector<std::vector<int>> tempArRI;
 
             mtx4.lock();
             if(outputIndexOfRingMembers.size() >= 1000){
                 long currentSize = outputIndexOfRingMembers.size();
                 tempArRI = outputIndexOfRingMembers;
-                i += currentSize;
+                rmIndex += currentSize;
 
                 outputIndexOfRingMembers.erase(outputIndexOfRingMembers.begin(),outputIndexOfRingMembers.begin()+currentSize);
 
             }else if(outputIndexOfRingMembers.size() < 1000 & isAllBlockDone){
                 long currentSize = outputIndexOfRingMembers.size();
                 tempArRI = outputIndexOfRingMembers;
-                i += currentSize;
+                rmIndex += currentSize;
 
                 outputIndexOfRingMembers.erase(outputIndexOfRingMembers.begin(),outputIndexOfRingMembers.begin()+currentSize);
             }
@@ -1012,84 +788,80 @@ namespace parse {
             if(!tempArRI.empty()){
                 dbConnectionRMIndex.insertRMIndex(tempArRI);
                 tempArRI.clear();
-
-                if(isAllBlockDone){
-                    time (& End);
-                    if(oneTime){
-                        time (& Start);
-                        oneTime = false;
-                    }
-                    double dif= difftime (End, Start);
-                    if(dif > 90){
-                        cout <<"STORED RING-MEMBER INDEX COUNT -" << i <<"/"<<lastStealthAddressId << endl;
-                        time (& Start);
-
-                    }
-                }
             }
 
-            if(outputIndexOfRingMembers.empty() && isAllBlockDone){
+            if(outputIndexOfRingMembers.empty() && outputOfRingMembers.empty() && rmHashIdVector.empty() && outputIndexOfStealthAddresses.empty() && outputOfStealthAddresses.empty() && saHashIdVector.empty() && keyImageHashIdVector.empty() && outputOfKeyImages.empty() && blockHashIdVector.empty() && outputOfBlock.empty() && outputIndexOfBlock.empty() && txHashIdVector.empty() && isAllBlockDone && outputOfTx.empty() && outputIndexOfTx.empty()){
                 break;
             }
         }
+
+
+        mapCon.close();
+        map2.close();
+        map3.close();
+        map4.close();
+        dbConnectionBlock.close();
+        dbConnectionTx.close();
+        dbConnectionKI.close();
+        dbConnectionSA.close();
+        dbConnectionSAIndex.close();
+        dbConnectionRM.close();
         dbConnectionRMIndex.close();
-        cout <<"RM INDEX STORING THREAD COMPLETED. STORED " <<i << " RM INDEXES" << endl;
-    }
-    void runRMIdHashMappingThread(){
-        int i = 0;
-        while (true){
-            if(!rmHashIdVector.empty()){
-                string rm_hash;
-                int lastRMId;
-                mtxh5.lock();
-                rm_hash = rmHashIdVector.begin()->first;
-                lastRMId = rmHashIdVector.begin()->second;
-                rmHashIdVector.erase(rmHashIdVector.begin());
-                mtxh5.unlock();
+        cout <<"BLOCK ID-HASH STORING THREAD COMPLETED. STORED " << blockHash << " BLOCK HASHES" << endl;
+        cout <<"BLOCK DATA STORING THREAD COMPLETED. STORED " << blockData << " BLOCK DETAILS" << endl;
+        cout <<"BLOCK INDEX STORING THREAD COMPLETED. STORED " << blockIndex << " BLOCK INDEXES" << endl;
+        cout <<"TX ID-HASH STORING THREAD COMPLETED. STORED " << txHash << " HASHES" << endl;
+        cout <<"TX DATA STORING THREAD COMPLETED. STORED " << txData <<" TXES"<< endl;
+        cout <<"TX INDEX STORING THREAD COMPLETED. STORED " << txIndex << " TX INDEXES" << endl;
+        cout <<"KEY-IMAGE ID-HASH STORING THREAD COMPLETED. STORED " << keyImageHash << " HASHES"<< endl;
+        cout <<"KEY-IMAGE DATA STORING THREAD COMPLETED. STORED " << keyImageData << " KEY-IMAGES" << endl;
+        cout <<"STEALTH-ADDRESS ID-HASH STORING THREAD COMPLETED. STORED " << saHash << " HASHES" << endl;
+        cout <<"STEALTH-ADDRESS DATA STORING THREAD COMPLETED. STORED " << saData << " STEALTH-ADDRESSES" << endl;
+        cout <<"STEALTH-ADDRESS INDEX STORING THREAD COMPLETED. STORED " << saIndex << " SA INDEXES" << endl;
+        cout <<"RING-MEMBER ID-HASH STORING THREAD COMPLETED. STORED " << rmHash<< " HASHES" << endl;
+        cout <<"RING-MEMBER DATA STORING THREAD COMPLETED. STORED " << rmData << " RING-MEMBERS" << endl;
+        cout <<"RM INDEX STORING THREAD COMPLETED. STORED " << rmIndex << " RM INDEXES" << endl;
 
-                ringMemberHashMap.insertKey(rm_hash,to_string(lastRMId));
-                i++;
-            }else if(rmHashIdVector.empty() && isAllBlockDone){
-                break;
-            }
-        }
+        lastBlockId = blockData;
+        lastTransactionId = txData;
+        lastStealthAddressId = saData;
+        lastKeyImageId = keyImageData;
+        lastRingMemberId = rmData;
 
-        //map5.close();
-        cout << "RING-MEMBER ID-HASH STORING THREAD COMPLETED. STORED " <<i<< " HASHES" << endl;
+        showCurrentStatus(all_block_size);
+        ringMemberHashMap.close();
     }
 
     //MAIN FUNCTION
-    void showCurrentStatus(int currentBlockHeight){
-        cout << "" << endl;
-        cout << "----------------------------------------------------------" << endl;
-        cout << currentBlockHeight << " - BLOCK DATA HAS LOADED TO THE MAIN MEMORY" << endl;
-        cout << "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ " << endl;
-        cout << "TOTAL BLOCKS            -" << lastBlockId -1 << endl;
-        cout << "TOTAL TRANSACTIONS      -" << lastTransactionId -1 << endl;
-        cout << "TOTAL KEY-IMAGES        -" << lastKeyImageId -1 << endl;
-        cout << "TOTAL STEALTH ADDRESSES -" << lastStealthAddressId -1 << endl;
-        cout << "TOTAL RING MEMBERS      -" << lastRingMemberId -1 <<"  (WITHOUT DUPLICATES)"<< endl;
-        cout << "----------------------------------------------------------" << endl;
-        cout << "" << endl;
-    }
-    void mainFunction(page& monerosci,int start,int end, uint64_t current_blockchain_height){
-        //load last ids to global variables
-        getLastIdList();
+    void dataProducerFunction(page& monerosci, int start, int end){
         int x;
         for(x = start; x <= end; x++){
             xmrProcessor(monerosci, to_string(x));
-            cout << "MoneroSci-parser has parsed blockchain data of "+ std::to_string(x)+ "/" << current_blockchain_height << endl;
+            cout << "MoneroSci-parser has parsed blockchain data of "+ std::to_string(x) << " - BLOCK" << endl;
         }
-
-        //store the last id in rocksdb hash-id mapping
-        storeLastIdList();
-        ringMemberHashMap.close();
-
-        showCurrentStatus(x);
-        isAllBlockDone = true;
-
     }
 
+    vector<std::vector<int>> getProducerRangers(int numProducer, uint64_t current_blockchain_height){
+        vector<std::vector<int>> ranges;
+
+        int numRanges = current_blockchain_height / numProducer;
+        int offset = current_blockchain_height % numProducer;
+
+        for(int x=1; x <= numProducer; x++){
+            if(x == numProducer){
+                std::vector<int> temp = {numRanges*(x-1)+1,numRanges*x+offset};
+                ranges.push_back(temp);
+            }else if(x == 1){
+                std::vector<int> temp = {1,numRanges*x};
+                ranges.push_back(temp);
+            }else{
+                std::vector<int> temp = {numRanges*(x-1)+1,numRanges*x};
+                ranges.push_back(temp);
+            }
+        }
+
+        return ranges;
+    }
 }
 
 
