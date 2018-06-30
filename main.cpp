@@ -5,6 +5,7 @@
 #include <thread>
 #include <vector>
 #include <ctime>
+#include <stdlib.h>
 
 using boost::filesystem::path;
 
@@ -143,13 +144,13 @@ int main(int ac, const char* av[]) {
     //check the last saved block height
     string last_block = parse::getLastSavedBlockHeight();
     int start_block_height = atoi(last_block.c_str()) + 1;
-    int end_block_height;
+    int end_block_height = 300;
 
     cout << "MoneroSci currently parsed block height - "<< last_block<< endl;
     string userInputBlock;
-    cout << "Enter how many blocks need to parse: ";
-    cin >> userInputBlock;
-    end_block_height = atoi(userInputBlock.c_str());
+//    cout << "Enter how many blocks need to parse: ";
+//    cin >> userInputBlock;
+//    end_block_height = atoi(userInputBlock.c_str());
 
     cout << "MoneroSci-Parser started to parse blocks range of "<<start_block_height<<" to "<< end_block_height<< endl;
     if(start_block_height>=end_block_height){

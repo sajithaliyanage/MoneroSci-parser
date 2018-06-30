@@ -202,7 +202,9 @@ namespace parse {
         map.close();
 
         if(last_saved_blk_height == "null"){
+            checker.lock();
             isFromBegining = true;
+            checker.unlock();
             last_saved_blk_height = "0";
         }
 
@@ -217,7 +219,7 @@ namespace parse {
     }
 
     json transactionDetails(page& monerosci, string curTx){
-        json jsonResponse  = monerosci.json_transaction(curTx);
+        json jsonResponse  = monerosci.json_detailedtransaction(curTx);
 
         return jsonResponse;
     }
@@ -324,9 +326,9 @@ namespace parse {
             string curTx = txs[x]["tx_hash"];
             json transactionData = transactionDetails(monerosci, curTx);
 
-            string txHash = transactionData.at("tx_hash");
+            string txHash = transactionData.at("tx_hash")[0];
 
-            //store tx map of hash-id in vector
+//          store tx map of hash-id in vector
             std::vector<string> txVector = {txHash,to_string(lastTransactionId)};
             mtxh3.lock();
             txHashIdVector.push_back(txVector);
@@ -342,7 +344,7 @@ namespace parse {
 
             for(int y=0; y < outputs.size(); y++){
                 //output public-key
-                string sa_hash = outputs[y]["public_key"];
+                string sa_hash = outputs[y]["out_pub_key"][0];
 
                 //store tx map of hash-id in vector
                 std::vector<string> saVector = {sa_hash,to_string(lastStealthAddressId)};
@@ -377,27 +379,31 @@ namespace parse {
 
             for(int y=0; y < inputs.size(); y++){
                 //output public-key
-                string key_image = inputs[y]["key_image"];
+                string key_image = inputs[y]["in_key_img"][0];
 
-                //store tx map of hash-id in vector
+                //store KI map of hash-id in vector
                 std::vector<string> keyImageVector = {key_image,to_string(lastKeyImageId)};
                 mtxh4.lock();
                 keyImageHashIdVector.push_back(keyImageVector);
                 mtxh4.unlock();
 
-                //store RM data in RM detail table
-                std::vector<string> tempDetailData = {to_string(lastKeyImageId),key_image,to_string(lastBlockId),to_string(lastTransactionId)};
+                //consider transaction inputs - Ring Members
+                json mixins = inputs[y]["mixins"];
+
+                //store KI data in KI detail vector
+                string input_amount = inputs[y]["amount"][0];
+                string input_idx = inputs[y]["input_idx"][0];
+                string mixin_count = to_string(mixins.size());
+                std::vector<string> tempDetailData = {to_string(lastKeyImageId),key_image,to_string(lastBlockId),to_string(lastTransactionId),input_amount,input_idx,mixin_count};
                 mtxk.lock();
                 outputOfKeyImages.push_back(tempDetailData);
                 mtxk.unlock();
 
-                //consider transaction inputs - Ring Members
-                json mixins = inputs[y]["mixins"];
                 for(int z=0; z < mixins.size(); z++){
 
                     //ring member public-key
                     int currentRingMemberId;
-                    string ring_key_image = mixins[z]["public_key"];
+                    string ring_key_image = mixins[z]["mix_pub_key"][0];
 
                     //find that ring-member is already in the bloom-filter
                     bool res = bloomFilter.exists(ring_key_image.c_str());
@@ -453,6 +459,9 @@ namespace parse {
 
             //store data on block detail table
             transactionData["lastTxId"] = lastTransactionId;
+            transactionData["coinbase"] = txs[x]["coinbase"];
+            transactionData["mixin"] = txs[x]["mixin"];
+
             mtxt1.lock();
             outputOfTx.push_back(transactionData);
             mtxt1.unlock();
@@ -1062,7 +1071,7 @@ namespace parse {
     void showCurrentStatus(int currentBlockHeight){
         cout << "" << endl;
         cout << "----------------------------------------------------------" << endl;
-        cout << currentBlockHeight << " - BLOCK DATA HAS LOADED TO THE MAIN MEMORY" << endl;
+        cout << currentBlockHeight-1 << " - BLOCK DATA HAS LOADED TO THE MAIN MEMORY" << endl;
         cout << "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ " << endl;
         cout << "TOTAL BLOCKS            -" << lastBlockId -1 << endl;
         cout << "TOTAL TRANSACTIONS      -" << lastTransactionId -1 << endl;
