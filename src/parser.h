@@ -38,6 +38,8 @@
 #include "bloomFilter.h"
 #include <mutex>
 #include <ctime>
+#include "sys/types.h"
+#include "sys/sysinfo.h"
 
 namespace parse {
     using namespace xmreg;
@@ -76,6 +78,14 @@ namespace parse {
     std::mutex mtxk;          //mutex for KIdata vectors
 
     std::mutex checker;       //mutex for access isBegining boolean
+
+    //global performance points (RAM, VRAM, CPU, TIME)
+    std::vector<double> timeMarker;
+    std::vector<long> vRamMarker;
+    std::vector<long> pRamMarker;
+    std::vector<double> cpuMarker;
+    long vRamTotalSize = 0;
+    long pRamTotalSize = 0;
 
     //global data store in memory as vectors for HASH-ID MAPPING
     std::vector<std::vector<string>> blockHashIdVector;         //store block hash-id
@@ -1067,6 +1077,101 @@ namespace parse {
         cout << "RING-MEMBER ID-HASH STORING THREAD COMPLETED. STORED " <<i<< " HASHES" << endl;
     }
 
+    //RUN-TIME, CPU Utilization and Memeroy Usage by Processors
+    void init(unsigned long long lastTotalUser, unsigned long long lastTotalUserLow, unsigned long long lastTotalSys, unsigned long long lastTotalIdle){
+        FILE* file = fopen("/proc/stat", "r");
+        fscanf(file, "cpu %llu %llu %llu %llu", &lastTotalUser, &lastTotalUserLow, &lastTotalSys, &lastTotalIdle);
+        fclose(file);
+    }
+    void performanceAnalyser(double timeUsage){
+        //Virtual and Physical Memory usage
+        struct sysinfo memInfo;
+        sysinfo (&memInfo);
+
+        if(pRamTotalSize == 0){
+            long long totalPhysMem = memInfo.totalram;
+            //Multiply in next statement to avoid int overflow on right hand side...
+            totalPhysMem *= memInfo.mem_unit;
+            pRamTotalSize = totalPhysMem;
+        }
+
+        long long physMemUsed = memInfo.totalram - memInfo.freeram;
+        //Multiply in next statement to avoid int overflow on right hand side...
+        physMemUsed *= memInfo.mem_unit;
+
+        if(vRamTotalSize == 0){
+            long long totalVirtualMem = memInfo.totalram;
+            //Add other values in next statement to avoid int overflow on right hand side...
+            totalVirtualMem += memInfo.totalswap;
+            totalVirtualMem *= memInfo.mem_unit;
+            vRamTotalSize = totalVirtualMem;
+        }
+
+        long long virtualMemUsed = memInfo.totalram - memInfo.freeram;
+        //Add other values in next statement to avoid int overflow on right hand side...
+        virtualMemUsed += memInfo.totalswap - memInfo.freeswap;
+        virtualMemUsed *= memInfo.mem_unit;
+
+        //CPU utilization performance
+        static unsigned long long lastTotalUser, lastTotalUserLow, lastTotalSys, lastTotalIdle;
+        init(lastTotalUser,lastTotalUserLow, lastTotalSys, lastTotalIdle);
+
+        double percent;
+        FILE* fileName;
+        unsigned long long totalUser, totalUserLow, totalSys, totalIdle, total;
+
+        fileName = fopen("/proc/stat", "r");
+        fscanf(fileName, "cpu %llu %llu %llu %llu", &totalUser, &totalUserLow,
+               &totalSys, &totalIdle);
+        fclose(fileName);
+
+        if (totalUser < lastTotalUser || totalUserLow < lastTotalUserLow ||
+            totalSys < lastTotalSys || totalIdle < lastTotalIdle){
+            //Overflow detection. Just skip this value.
+            percent = -1.0;
+        }
+        else{
+            total = (totalUser - lastTotalUser) + (totalUserLow - lastTotalUserLow) +
+                    (totalSys - lastTotalSys);
+            percent = total;
+            total += (totalIdle - lastTotalIdle);
+            percent /= total;
+            percent *= 100;
+        }
+
+        //        cout << "Physical Memory Usage (bytes): " << physMemUsed <<"/"<< totalPhysMem << endl;
+        //        cout << "Virtual Memory Usage (bytes) : " << virtualMemUsed <<"/"<< totalVirtualMem << endl;
+        //        cout << "Processors Run Time (seconds): " << timeUsage << endl;
+                cout << "CPU Utilization (percentage) : " << percent << "%"<< endl;
+
+        //append data to vectors
+        timeMarker.push_back(timeUsage);
+        cpuMarker.push_back(percent);
+        vRamMarker.push_back(virtualMemUsed);
+        pRamMarker.push_back(physMemUsed);
+
+    }
+    void printPerformance(){
+        string timeMarkerString,vRamMarkerString,pRamMarkerString,cpuMarkerString;
+        for(int x =0; x < timeMarker.size() ;x++){
+            timeMarkerString += to_string((int)timeMarker[x]) + " | ";
+            vRamMarkerString += to_string(vRamMarker[x]) + " | ";
+            pRamMarkerString += to_string(pRamMarker[x]) + " | ";
+            cpuMarkerString  += to_string(cpuMarker[x])  + " | ";
+        }
+
+        cout << "" << endl;
+        cout << "----------------------------------------------------------" << endl;
+        cout << " PERFORMANCE OF MONEROSCI PARSER DURING PARSING " << endl;
+        cout << "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ " << endl;
+        cout << "PHYSICAL RAM USAGE (bytes)        - | " << pRamMarkerString << endl;
+        cout << "VIRTUAL RAM USAGE (bytes)         - | " << vRamMarkerString << endl;
+        cout << "RUN TIME DURATION PER 100/blocks  - | " << timeMarkerString << endl;
+        cout << "CPU UTILIZATION (percentage)      - | " << cpuMarkerString << endl;
+        cout << "----------------------------------------------------------" << endl;
+        cout << "" << endl;
+    }
+
     //MAIN FUNCTION
     void showCurrentStatus(int currentBlockHeight){
         cout << "" << endl;
@@ -1084,10 +1189,19 @@ namespace parse {
     void mainFunction(page& monerosci,int start,int end, uint64_t current_blockchain_height){
         //load last ids to global variables
         getLastIdList();
+        time_t Start, End;
+        time (& Start);
+
         int x;
         for(x = start; x <= end; x++){
             xmrProcessor(monerosci, to_string(x));
             cout << "MoneroSci-parser has parsed blockchain data of "+ std::to_string(x)+ "/" << current_blockchain_height << endl;
+
+            if(x%100 == 0){
+                time (& End);
+                double timeUsage = difftime (End, Start);
+                performanceAnalyser(timeUsage);
+            }
         }
 
         //store the last id in rocksdb hash-id mapping
@@ -1095,6 +1209,7 @@ namespace parse {
         ringMemberHashMap.close();
 
         showCurrentStatus(x);
+        printPerformance();
         isAllBlockDone = true;
 
     }
